@@ -50,6 +50,12 @@ const form = reactive({
 });
 
 const formError = ref('');
+const toast = ref('');
+
+function flashToast(msg: string) {
+  toast.value = msg;
+  setTimeout(() => (toast.value = ''), 2500);
+}
 
 const filtered = computed(() => {
   const q = search.value.trim().toLowerCase();
@@ -168,12 +174,20 @@ function confirmDelete(p: Project) {
 function doDelete() {
   if (deleteTarget.value) {
     const name = deleteTarget.value.name;
-    projectStore.deleteProject(deleteTarget.value.id);
-    auditStore.addLog({
-      actionType: 'project_delete',
-      actor: '本地用户',
-      description: `删除项目：${name}`,
-    });
+    const result = projectStore.deleteProject(deleteTarget.value.id);
+    if (result.ok) {
+      const deletedCount = result.deletedCitationCount || 0;
+      const msg = deletedCount > 0
+        ? `已删除项目「${name}」及关联的 ${deletedCount} 条典籍依据`
+        : `已删除项目「${name}」`;
+      flashToast(msg);
+      auditStore.addLog({
+        actionType: 'project_delete',
+        actor: '本地用户',
+        projectId: deleteTarget.value.id,
+        description: msg,
+      });
+    }
     deleteTarget.value = null;
   }
 }
@@ -235,6 +249,12 @@ function loadScan(scanId: string) {
 
 <template>
   <div class="space-y-6">
+    <div
+      v-if="toast"
+      class="fixed top-20 right-6 z-50 rounded-sm border border-moss/40 bg-moss/90 text-paper-50 px-4 py-2 text-sm font-serif shadow-lg animate-fade-in"
+    >
+      {{ toast }}
+    </div>
     <div class="flex flex-col md:flex-row md:items-end justify-between gap-4">
       <div>
         <h2 class="juan-title" data-juan="卷首">项目管理</h2>

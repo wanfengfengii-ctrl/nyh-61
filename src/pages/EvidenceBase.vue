@@ -17,6 +17,7 @@ import {
   BookMarked,
   FileText,
   Image,
+  Upload,
   GitCompare,
   ArrowUpDown,
   ChevronUp,
@@ -59,6 +60,8 @@ const form = reactive({
   volume: '',
   page: '',
   content: '',
+  imageData: '',
+  imageName: '',
   credibility: 'secondary' as CitationCredibility,
   tags: '',
   projectId: '',
@@ -66,9 +69,49 @@ const form = reactive({
   linkRelevanceNote: '',
 });
 
-const formError = ref('');
+const imageFileInput = ref<HTMLInputElement | null>(null);
 
-const filteredCitations = computed(() => {
+function handleImageUpload(event: Event) {
+  const input = event.target as HTMLInputElement;
+  const file = input.files?.[0];
+  if (!file) return;
+  if (!file.type.startsWith('image/')) {
+    flashToast('请选择图片文件');
+    return;
+  }
+  if (file.size > 5 * 1024 * 1024) {
+    flashToast('图片大小不能超过 5MB');
+    return;
+  }
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    form.imageData = e.target?.result as string;
+    form.imageName = file.name;
+  };
+  reader.readAsDataURL(file);
+}
+
+function clearImage() {
+  form.imageData = '';
+  form.imageName = '';
+  if (imageFileInput.value) {
+    imageFileInput.value.value = '';
+  }
+}
+
+function openImage(imageData: string) {
+  window.open(imageData, '_blank');
+}
+
+const formError = ref('');
+const toast = ref('');
+
+function flashToast(msg: string) {
+  toast.value = msg;
+  setTimeout(() => (toast.value = ''), 2500);
+}
+
+const sortedCitations = computed(() => {
   let results = citationStore.searchCitations(search.value, {
     citationType: filterType.value || undefined,
     credibility: filterCredibility.value || undefined,
@@ -112,6 +155,8 @@ function openCreate() {
   form.volume = '';
   form.page = '';
   form.content = '';
+  form.imageData = '';
+  form.imageName = '';
   form.credibility = 'secondary';
   form.tags = '';
   form.projectId = projectStore.currentProjectId || '';
@@ -131,6 +176,8 @@ function openCreateAndLink(diffEntryId: string) {
   form.volume = '';
   form.page = '';
   form.content = '';
+  form.imageData = '';
+  form.imageName = '';
   form.credibility = 'secondary';
   form.tags = '';
   form.projectId = projectStore.currentProjectId || '';
@@ -150,6 +197,8 @@ function openEdit(c: CitationEntry) {
   form.volume = c.volume || '';
   form.page = c.page || '';
   form.content = c.content;
+  form.imageData = c.imageData || '';
+  form.imageName = c.imageName || '';
   form.credibility = c.credibility;
   form.tags = c.tags.join('、');
   form.projectId = c.projectId || '';
@@ -187,6 +236,8 @@ function submitForm() {
     volume: form.volume.trim() || undefined,
     page: form.page.trim() || undefined,
     content: form.content.trim(),
+    imageData: form.imageData || undefined,
+    imageName: form.imageName || undefined,
     credibility: form.credibility,
     tags: tagsArr,
     projectId: form.projectId || undefined,
@@ -258,6 +309,9 @@ function doQuickLink(diffEntryId: string, relevanceNote?: string) {
       description: '关联典籍依据到差异条目',
       details: { citationId: quickLinkDiffId.value },
     });
+    flashToast('已成功关联到差异条目');
+  } else {
+    flashToast('该差异条目已关联此典籍依据，无需重复关联');
   }
   showQuickCreateModal.value = false;
   quickLinkDiffId.value = null;
@@ -312,6 +366,12 @@ function getCredibilityShield(cred: CitationCredibility) {
 
 <template>
   <div class="space-y-6">
+    <div
+      v-if="toast"
+      class="fixed top-20 right-6 z-50 rounded-sm border border-moss/40 bg-moss/90 text-paper-50 px-4 py-2 text-sm font-serif shadow-lg animate-fade-in"
+    >
+      {{ toast }}
+    </div>
     <div class="flex flex-col md:flex-row md:items-end justify-between gap-4">
       <div>
         <h2 class="juan-title" data-juan="卷五">典籍依据库与引文比证</h2>
@@ -420,7 +480,7 @@ function getCredibilityShield(cred: CitationCredibility) {
 
     <div class="space-y-4">
       <div
-        v-for="c in filteredCitations"
+        v-for="c in sortedCitations"
         :key="c.id"
         class="card-scroll p-5 hover:border-vermilion/40 transition-all group"
       >
@@ -509,6 +569,14 @@ function getCredibilityShield(cred: CitationCredibility) {
           <div class="text-sm font-serif text-ink leading-7 whitespace-pre-wrap line-clamp-4">{{ c.content }}</div>
         </div>
 
+        <div v-if="c.imageData" class="mt-3 rounded-sm border border-ink/10 overflow-hidden bg-paper-100">
+          <div class="text-xs text-ink-muted px-3 py-2 border-b border-ink/10 flex items-center gap-1">
+            <Image class="w-3 h-3" />
+            图像页码 <span class="text-ink-pale ml-1">{{ c.imageName }}</span>
+          </div>
+          <img :src="c.imageData" :alt="c.title" class="w-full max-h-48 object-contain p-2" @click="openImage(c.imageData)" style="cursor: pointer;" />
+        </div>
+
         <div class="mt-3 flex flex-wrap items-center gap-3">
           <div v-if="c.tags.length > 0" class="flex flex-wrap gap-1">
             <Tag class="w-3 h-3 text-ink-pale" />
@@ -531,7 +599,7 @@ function getCredibilityShield(cred: CitationCredibility) {
       </div>
 
       <div
-        v-if="filteredCitations.length === 0"
+        v-if="sortedCitations.length === 0"
         class="card-scroll p-12 text-center"
       >
         <BookOpen class="w-12 h-12 mx-auto text-ink-pale mb-3" />
@@ -641,6 +709,45 @@ function getCredibilityShield(cred: CitationCredibility) {
                 placeholder="录入典籍原文或校勘记内容，支持多行……"
                 class="text-area-paper text-sm"
               />
+            </div>
+
+            <div v-if="form.citationType === 'image_page'">
+              <label class="block font-serif text-sm text-ink-soft mb-1">
+                <Image class="w-3.5 h-3.5 inline mr-1" />
+                图像页码截图（可选）
+              </label>
+              <div v-if="form.imageData" class="mb-3">
+                <div class="relative rounded-sm border border-ink/20 overflow-hidden bg-paper-100">
+                  <img :src="form.imageData" :alt="form.imageName" class="w-full max-h-64 object-contain" />
+                  <button
+                    type="button"
+                    @click="clearImage"
+                    class="absolute top-2 right-2 bg-paper-50/90 text-carmine px-2 py-1 text-xs rounded-sm border border-carmine/30 hover:bg-carmine/10 transition-colors"
+                  >
+                    <X class="w-3 h-3 inline mr-1" />
+                    移除图片
+                  </button>
+                </div>
+                <div class="text-xs text-ink-muted mt-1 font-serif">{{ form.imageName }}</div>
+              </div>
+              <div v-else>
+                <input
+                  ref="imageFileInput"
+                  type="file"
+                  accept="image/*"
+                  @change="handleImageUpload"
+                  class="hidden"
+                />
+                <button
+                  type="button"
+                  @click="imageFileInput?.click()"
+                  class="w-full border-2 border-dashed border-ink/20 rounded-sm py-6 text-center hover:border-carmine/40 hover:bg-carmine/5 transition-colors"
+                >
+                  <Upload class="w-6 h-6 mx-auto text-ink-muted mb-2" />
+                  <div class="text-sm text-ink-soft font-serif">点击上传古籍页面截图</div>
+                  <div class="text-xs text-ink-muted mt-1">支持 JPG、PNG 格式，大小不超过 5MB</div>
+                </button>
+              </div>
             </div>
 
             <div>

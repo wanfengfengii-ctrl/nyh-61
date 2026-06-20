@@ -150,6 +150,8 @@ export interface CitationEntry {
   volume?: string;
   page?: string;
   content: string;
+  imageData?: string;
+  imageName?: string;
   credibility: CitationCredibility;
   tags: string[];
   diffEntryIds: string[];

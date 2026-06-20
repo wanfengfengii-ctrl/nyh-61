@@ -29,6 +29,7 @@ import {
   Link,
   ShieldCheck,
   Link2,
+  Image,
 } from 'lucide-vue-next';
 import { RouterLink, useRouter } from 'vue-router';
 import { useDiffStore } from '@/stores/diffStore';
@@ -242,6 +243,10 @@ function getCredibilityShield(cred: string) {
   if (cred === 'primary') return '★★★';
   if (cred === 'secondary') return '★★☆';
   return '★☆☆';
+}
+
+function openImage(imageData: string) {
+  window.open(imageData, '_blank');
 }
 
 function flashToast(msg: string) {
@@ -904,6 +909,19 @@ const sectionTypeLabels: Record<string, string> = {
                   <div class="text-xs font-serif text-ink-soft whitespace-pre-wrap leading-relaxed border-l-2 border-ink/15 pl-2 ml-1">
                     {{ item.citation.content }}
                   </div>
+                  <div v-if="item.citation.imageData" class="mt-2 rounded-sm border border-ink/10 overflow-hidden bg-paper-100">
+                    <div class="text-[10px] text-ink-muted px-2 py-1 border-b border-ink/10 flex items-center gap-1">
+                      <Image class="w-3 h-3" />
+                      图像页码 <span class="text-ink-pale ml-1">{{ item.citation.imageName }}</span>
+                    </div>
+                    <img
+                      :src="item.citation.imageData"
+                      :alt="item.citation.title"
+                      class="w-full max-h-48 object-contain p-2"
+                      @click="openImage(item.citation.imageData)"
+                      style="cursor: pointer;"
+                    />
+                  </div>
                   <div v-if="item.link?.relevanceNote" class="text-[11px] text-vermilion/80 font-serif mt-1.5 italic">
                     ▸ {{ item.link.relevanceNote }}
                   </div>
@@ -1016,6 +1034,19 @@ const sectionTypeLabels: Record<string, string> = {
               </div>
               <div class="text-xs font-serif text-ink-soft leading-relaxed pl-6 mb-2 line-clamp-3">
                 {{ c.content }}
+              </div>
+              <div v-if="c.imageData" class="mb-2 ml-6 rounded-sm border border-ink/10 overflow-hidden bg-paper-100">
+                <div class="text-[10px] text-ink-muted px-2 py-1 border-b border-ink/10 flex items-center gap-1">
+                  <Image class="w-3 h-3" />
+                  图像页码 <span class="text-ink-pale ml-1">{{ c.imageName }}</span>
+                </div>
+                <img
+                  :src="c.imageData"
+                  :alt="c.title"
+                  class="w-full max-h-32 object-contain p-2"
+                  @click="openImage(c.imageData)"
+                  style="cursor: pointer;"
+                />
               </div>
               <div class="text-[10px] text-ink-pale font-serif pl-6 flex flex-wrap gap-3">
                 <span>来源：{{ c.source }}</span>

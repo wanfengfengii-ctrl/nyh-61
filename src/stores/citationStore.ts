@@ -52,6 +52,8 @@ export const useCitationStore = defineStore('citation', () => {
     volume?: string;
     page?: string;
     content: string;
+    imageData?: string;
+    imageName?: string;
     credibility: CitationCredibility;
     tags?: string[];
     projectId?: string;
@@ -67,6 +69,8 @@ export const useCitationStore = defineStore('citation', () => {
       volume: data.volume?.trim() || undefined,
       page: data.page?.trim() || undefined,
       content: data.content.trim(),
+      imageData: data.imageData || undefined,
+      imageName: data.imageName || undefined,
       credibility: data.credibility,
       tags: data.tags || [],
       diffEntryIds: [],
@@ -95,6 +99,18 @@ export const useCitationStore = defineStore('citation', () => {
     links.value = links.value.filter((l) => l.citationId !== id);
     persist();
     return true;
+  }
+
+  function deleteCitationsByProject(projectId: string): number {
+    const projectCitationIds = citations.value
+      .filter((c) => c.projectId === projectId)
+      .map((c) => c.id);
+    const count = projectCitationIds.length;
+    if (count === 0) return 0;
+    citations.value = citations.value.filter((c) => c.projectId !== projectId);
+    links.value = links.value.filter((l) => projectCitationIds.includes(l.citationId));
+    persist();
+    return count;
   }
 
   function linkToDiff(citationId: string, diffEntryId: string, relevanceNote?: string): CitationDiffLink | null {
@@ -264,6 +280,8 @@ export const useCitationStore = defineStore('citation', () => {
       volume?: string;
       page?: string;
       content: string;
+      imageData?: string;
+      imageName?: string;
       credibility: CitationCredibility;
       tags?: string[];
       projectId?: string;
@@ -314,6 +332,7 @@ export const useCitationStore = defineStore('citation', () => {
     addCitation,
     updateCitation,
     deleteCitation,
+    deleteCitationsByProject,
     linkToDiff,
     unlinkFromDiff,
     getCitationsByDiffEntry,

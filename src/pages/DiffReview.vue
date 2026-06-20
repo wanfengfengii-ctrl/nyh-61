@@ -28,6 +28,8 @@ import {
   ShieldCheck,
   Search,
   Plus,
+  Image,
+  Upload,
 } from 'lucide-vue-next';
 import { RouterLink, useRouter } from 'vue-router';
 import { useDiffStore } from '@/stores/diffStore';
@@ -97,12 +99,53 @@ const quickCitationForm = reactive({
   volume: '',
   page: '',
   content: '',
+  imageData: '',
+  imageName: '',
   credibility: 'secondary' as CitationCredibility,
   tags: '',
   relevanceNote: '',
 });
 
 const quickCitationError = ref('');
+const toast = ref('');
+const quickCitationImageInput = ref<HTMLInputElement | null>(null);
+
+function flashToast(msg: string) {
+  toast.value = msg;
+  setTimeout(() => (toast.value = ''), 2500);
+}
+
+function handleQuickCitationImageUpload(event: Event) {
+  const input = event.target as HTMLInputElement;
+  const file = input.files?.[0];
+  if (!file) return;
+  if (!file.type.startsWith('image/')) {
+    flashToast('请选择图片文件');
+    return;
+  }
+  if (file.size > 5 * 1024 * 1024) {
+    flashToast('图片大小不能超过 5MB');
+    return;
+  }
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    quickCitationForm.imageData = e.target?.result as string;
+    quickCitationForm.imageName = file.name;
+  };
+  reader.readAsDataURL(file);
+}
+
+function clearQuickCitationImage() {
+  quickCitationForm.imageData = '';
+  quickCitationForm.imageName = '';
+  if (quickCitationImageInput.value) {
+    quickCitationImageInput.value.value = '';
+  }
+}
+
+function openImage(imageData: string) {
+  window.open(imageData, '_blank');
+}
 
 const filteredEntries = computed<DiffEntry[]>(() => {
   const all = diffStore.entries;
@@ -362,6 +405,9 @@ function doLinkCitation() {
       description: `关联典籍依据到差异条目`,
       details: { citationId: linkTargetCitationId.value, relevanceNote: linkRelevanceNote.value },
     });
+    flashToast('已成功关联典籍依据');
+  } else {
+    flashToast('该差异条目已关联此典籍依据，无需重复关联');
   }
   showLinkModal.value = false;
   linkTargetCitationId.value = null;
@@ -390,6 +436,8 @@ function openCreateCitationModal() {
   quickCitationForm.volume = '';
   quickCitationForm.page = '';
   quickCitationForm.content = '';
+  quickCitationForm.imageData = '';
+  quickCitationForm.imageName = '';
   quickCitationForm.credibility = 'secondary';
   quickCitationForm.tags = '';
   quickCitationForm.relevanceNote = '';
@@ -427,6 +475,8 @@ function submitQuickCitation() {
       volume: quickCitationForm.volume.trim() || undefined,
       page: quickCitationForm.page.trim() || undefined,
       content: quickCitationForm.content.trim(),
+      imageData: quickCitationForm.imageData || undefined,
+      imageName: quickCitationForm.imageName || undefined,
       credibility: quickCitationForm.credibility,
       tags: tagsArr,
       projectId: projectStore.currentProjectId || undefined,
@@ -455,6 +505,7 @@ function submitQuickCitation() {
     });
   }
 
+  flashToast('已创建典籍依据并关联到当前差异条目');
   showCreateCitationModal.value = false;
 }
 
@@ -480,6 +531,12 @@ const quickCredibilityOptions: { value: CitationCredibility; label: string; desc
 
 <template>
   <div class="space-y-6">
+    <div
+      v-if="toast"
+      class="fixed top-20 right-6 z-50 rounded-sm border border-moss/40 bg-moss/90 text-paper-50 px-4 py-2 text-sm font-serif shadow-lg animate-fade-in"
+    >
+      {{ toast }}
+    </div>
     <div class="flex flex-col md:flex-row md:items-end justify-between gap-4">
       <div>
         <h2 class="juan-title" data-juan="卷三">差异审核与标记</h2>
@@ -1144,6 +1201,19 @@ const quickCredibilityOptions: { value: CitationCredibility; label: string; desc
                         <div class="text-xs font-serif text-ink leading-relaxed pl-6 bg-paper-100/50 rounded-sm p-2 whitespace-pre-wrap">
                           {{ item.citation.content }}
                         </div>
+                        <div v-if="item.citation.imageData" class="mt-2 ml-6 rounded-sm border border-ink/10 overflow-hidden bg-paper-100">
+                          <div class="text-[10px] text-ink-muted px-2 py-1 border-b border-ink/10 flex items-center gap-1">
+                            <Image class="w-3 h-3" />
+                            图像页码 <span class="text-ink-pale ml-1">{{ item.citation.imageName }}</span>
+                          </div>
+                          <img
+                            :src="item.citation.imageData"
+                            :alt="item.citation.title"
+                            class="w-full max-h-40 object-contain p-2"
+                            @click="openImage(item.citation.imageData)"
+                            style="cursor: pointer;"
+                          />
+                        </div>
                         <div class="mt-2 text-[10px] text-ink-pale font-serif pl-6 flex flex-wrap gap-x-3 gap-y-1">
                           <span>来源：{{ item.citation.source }}</span>
                           <span v-if="item.citation.author">作者：{{ item.citation.author }}</span>
@@ -1352,6 +1422,45 @@ const quickCredibilityOptions: { value: CitationCredibility; label: string; desc
                 placeholder="录入典籍原文或校勘记内容……"
                 class="text-area-paper text-sm"
               />
+            </div>
+
+            <div v-if="quickCitationForm.citationType === 'image_page'">
+              <label class="block font-serif text-sm text-ink-soft mb-1">
+                <Image class="w-3.5 h-3.5 inline mr-1" />
+                图像页码截图（可选）
+              </label>
+              <div v-if="quickCitationForm.imageData" class="mb-3">
+                <div class="relative rounded-sm border border-ink/20 overflow-hidden bg-paper-100">
+                  <img :src="quickCitationForm.imageData" :alt="quickCitationForm.imageName" class="w-full max-h-48 object-contain" />
+                  <button
+                    type="button"
+                    @click="clearQuickCitationImage"
+                    class="absolute top-2 right-2 bg-paper-50/90 text-carmine px-2 py-1 text-xs rounded-sm border border-carmine/30 hover:bg-carmine/10 transition-colors"
+                  >
+                    <X class="w-3 h-3 inline mr-1" />
+                    移除图片
+                  </button>
+                </div>
+                <div class="text-xs text-ink-muted mt-1 font-serif">{{ quickCitationForm.imageName }}</div>
+              </div>
+              <div v-else>
+                <input
+                  ref="quickCitationImageInput"
+                  type="file"
+                  accept="image/*"
+                  @change="handleQuickCitationImageUpload"
+                  class="hidden"
+                />
+                <button
+                  type="button"
+                  @click="quickCitationImageInput?.click()"
+                  class="w-full border-2 border-dashed border-ink/20 rounded-sm py-5 text-center hover:border-carmine/40 hover:bg-carmine/5 transition-colors"
+                >
+                  <Upload class="w-5 h-5 mx-auto text-ink-muted mb-1" />
+                  <div class="text-sm text-ink-soft font-serif">点击上传古籍页面截图</div>
+                  <div class="text-xs text-ink-muted mt-0.5">支持 JPG、PNG 格式，大小不超过 5MB</div>
+                </button>
+              </div>
             </div>
 
             <div>

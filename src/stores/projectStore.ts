@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
 import type { Project, ScanHistory } from '@/types';
+import { useCitationStore } from './citationStore';
 
 const PROJECT_KEY = 'ancientscrutiny_projects_v1';
 const CURRENT_PROJECT_KEY = 'ancientscrutiny_current_project_v1';
@@ -112,7 +113,7 @@ export const useProjectStore = defineStore('project', () => {
     return { ok: true };
   }
 
-  function deleteProject(id: string): { ok: boolean; error?: string } {
+  function deleteProject(id: string): { ok: boolean; error?: string; deletedCitationCount?: number } {
     const idx = projects.value.findIndex((p) => p.id === id);
     if (idx === -1) return { ok: false, error: '项目不存在' };
     projects.value.splice(idx, 1);
@@ -121,9 +122,11 @@ export const useProjectStore = defineStore('project', () => {
       persistCurrent();
     }
     scanHistories.value = scanHistories.value.filter((h) => h.projectId !== id);
+    const citationStore = useCitationStore();
+    const deletedCitationCount = citationStore.deleteCitationsByProject(id);
     persistProjects();
     persistHistories();
-    return { ok: true };
+    return { ok: true, deletedCitationCount };
   }
 
   function setCurrentProject(id: string | null) {
