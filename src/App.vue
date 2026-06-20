@@ -15,6 +15,9 @@ import {
   History,
   ChevronDown,
   BookMarked,
+  GitBranch,
+  Columns,
+  FileBarChart,
 } from 'lucide-vue-next';
 import { useRuleStore } from '@/stores/ruleStore';
 import { useDiffStore } from '@/stores/diffStore';
@@ -53,6 +56,9 @@ const nav = [
   { to: '/report', name: '校验报告', icon: ScrollText, juan: '卷四' },
   { to: '/evidence', name: '典籍依据库', icon: BookMarked, juan: '卷五' },
   { to: '/audit', name: '操作日志', icon: History, juan: '卷六' },
+  { to: '/versions', name: '版本管理', icon: GitBranch, juan: '卷七' },
+  { to: '/collation', name: '版本对读', icon: Columns, juan: '卷八' },
+  { to: '/collation-report', name: '校勘报告', icon: FileBarChart, juan: '卷九' },
 ];
 
 function dismissToast() {

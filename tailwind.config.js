@@ -45,6 +45,18 @@ export default {
           DEFAULT: '#7A8B6E',
           soft: '#B7C2AD',
         },
+        purple: {
+          DEFAULT: '#7B4E9E',
+          soft: '#B59AD1',
+        },
+        amber: {
+          DEFAULT: '#B8860B',
+          soft: '#E6C878',
+        },
+        indigo: {
+          DEFAULT: '#4B5B9C',
+          soft: '#9AA8D4',
+        },
       },
       fontFamily: {
         serif: ['"Noto Serif SC"', 'serif'],

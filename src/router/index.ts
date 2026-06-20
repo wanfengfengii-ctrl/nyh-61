@@ -1,6 +1,8 @@
 import { createRouter, createWebHashHistory, type RouteRecordRaw } from 'vue-router';
 import { useTextStore } from '@/stores/textStore';
 import { useDiffStore } from '@/stores/diffStore';
+import { useVersionStore } from '@/stores/versionStore';
+import { useVariantStore } from '@/stores/variantStore';
 
 const routes: RouteRecordRaw[] = [
   {
@@ -63,6 +65,40 @@ const routes: RouteRecordRaw[] = [
     name: 'audit',
     component: () => import('@/pages/AuditLog.vue'),
     meta: { title: '卷六 · 操作日志' },
+  },
+  {
+    path: '/versions',
+    name: 'versions',
+    component: () => import('@/pages/VersionManager.vue'),
+    meta: { title: '卷七 · 版本管理' },
+  },
+  {
+    path: '/collation',
+    name: 'collation',
+    component: () => import('@/pages/VersionCollation.vue'),
+    meta: { title: '卷八 · 版本对读' },
+    beforeEnter: () => {
+      const versionStore = useVersionStore();
+      if (!versionStore.initialized) versionStore.load();
+      if (versionStore.versions.length < 2) {
+        return { path: '/versions', query: { reason: 'needversions' } };
+      }
+      return true;
+    },
+  },
+  {
+    path: '/collation-report',
+    name: 'collation-report',
+    component: () => import('@/pages/CollationReportPage.vue'),
+    meta: { title: '卷九 · 校勘报告' },
+    beforeEnter: () => {
+      const variantStore = useVariantStore();
+      if (!variantStore.initialized) variantStore.load();
+      if (variantStore.variants.length === 0) {
+        return { path: '/collation', query: { reason: 'needcollation' } };
+      }
+      return true;
+    },
   },
 ];
 
