@@ -5,7 +5,13 @@ import { useDiffStore } from '@/stores/diffStore';
 const routes: RouteRecordRaw[] = [
   {
     path: '/',
-    redirect: { path: '/rules' },
+    redirect: { path: '/projects' },
+  },
+  {
+    path: '/projects',
+    name: 'projects',
+    component: () => import('@/pages/ProjectManager.vue'),
+    meta: { title: '卷首 · 项目管理' },
   },
   {
     path: '/rules',
@@ -45,6 +51,12 @@ const routes: RouteRecordRaw[] = [
       }
       return true;
     },
+  },
+  {
+    path: '/audit',
+    name: 'audit',
+    component: () => import('@/pages/AuditLog.vue'),
+    meta: { title: '卷六 · 操作日志' },
   },
 ];
 

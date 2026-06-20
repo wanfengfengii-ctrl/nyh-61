@@ -1,24 +1,54 @@
 <script setup lang="ts">
 import { watch, ref, computed, onMounted } from 'vue';
 import { useRoute, RouterLink, RouterView } from 'vue-router';
-import { BookOpen, FileText, GitCompare, ScrollText, AlertTriangle, Menu, X, Check } from 'lucide-vue-next';
+import {
+  BookOpen,
+  FileText,
+  GitCompare,
+  ScrollText,
+  AlertTriangle,
+  Menu,
+  X,
+  Check,
+  Folder,
+  FolderOpen,
+  History,
+  ChevronDown,
+} from 'lucide-vue-next';
 import { useRuleStore } from '@/stores/ruleStore';
 import { useDiffStore } from '@/stores/diffStore';
+import { useTextStore } from '@/stores/textStore';
+import { useProjectStore } from '@/stores/projectStore';
+import { useAuditStore } from '@/stores/auditStore';
+import { useAnnotationStore } from '@/stores/annotationStore';
+import { useReviewStore } from '@/stores/reviewStore';
+import { useRuleVersionStore } from '@/stores/ruleVersionStore';
+import { useTemplateStore } from '@/stores/templateStore';
 
 const route = useRoute();
 const ruleStore = useRuleStore();
 const diffStore = useDiffStore();
+const textStore = useTextStore();
+const projectStore = useProjectStore();
+const auditStore = useAuditStore();
+const annotationStore = useAnnotationStore();
+const reviewStore = useReviewStore();
+const ruleVersionStore = useRuleVersionStore();
+const templateStore = useTemplateStore();
 
 const sidebarOpen = ref(false);
 const invalidateToast = ref<{ type: 'rule' | 'text'; message: string } | null>(null);
+const projectDropdownOpen = ref(false);
 
 const showStaleBanner = computed(() => invalidateToast.value !== null);
 
 const nav = [
+  { to: '/projects', name: '项目管理', icon: Folder, juan: '卷首' },
   { to: '/rules', name: '规则表', icon: BookOpen, juan: '卷一' },
   { to: '/import', name: '文本导入', icon: FileText, juan: '卷二' },
   { to: '/review', name: '差异审核', icon: GitCompare, juan: '卷三' },
   { to: '/report', name: '校验报告', icon: ScrollText, juan: '卷四' },
+  { to: '/audit', name: '操作日志', icon: History, juan: '卷六' },
 ];
 
 function dismissToast() {
@@ -26,6 +56,16 @@ function dismissToast() {
 }
 
 onMounted(() => {
+  projectStore.load();
+  ruleStore.load();
+  textStore.load();
+  diffStore.load();
+  auditStore.load();
+  annotationStore.load();
+  reviewStore.load();
+  ruleVersionStore.load();
+  templateStore.load();
+
   ruleStore.$subscribe(
     () => {
       if (diffStore.scanStatus === 'done' || diffStore.entries.length > 0) {
@@ -45,6 +85,11 @@ onMounted(() => {
     },
   );
 });
+
+function selectProject(projectId: string) {
+  projectStore.setCurrentProject(projectId);
+  projectDropdownOpen.value = false;
+}
 </script>
 
 <template>
@@ -77,25 +122,69 @@ onMounted(() => {
             </div>
           </div>
         </div>
-        <nav class="hidden md:flex items-center gap-1">
-          <RouterLink
-            v-for="item in nav"
-            :key="item.to"
-            :to="item.to"
-            class="group relative px-4 py-2 rounded-[4px] font-serif text-sm transition-all duration-200"
-            :class="
-              route.path === item.to
-                ? 'bg-vermilion text-paper-50 shadow'
-                : 'text-ink hover:bg-paper-200'
-            "
-          >
-            <span class="inline-flex items-center gap-2">
-              <component :is="item.icon" class="w-4 h-4" />
-              <span class="text-[10px] opacity-60 mr-1">{{ item.juan }}</span>
-              {{ item.name }}
-            </span>
-          </RouterLink>
-        </nav>
+
+        <div class="hidden md:flex items-center gap-4">
+          <div v-if="projectStore.projects.length > 0" class="relative">
+            <button
+              class="inline-flex items-center gap-2 px-3 py-1.5 rounded-md border border-ink/20 bg-paper-50 text-sm font-serif hover:border-vermilion/50 transition-all"
+              @click="projectDropdownOpen = !projectDropdownOpen"
+            >
+              <FolderOpen v-if="projectStore.currentProject" class="w-4 h-4 text-vermilion" />
+              <Folder v-else class="w-4 h-4 text-ink-muted" />
+              <span class="max-w-[140px] truncate">
+                {{ projectStore.currentProject?.name || '选择项目' }}
+              </span>
+              <ChevronDown class="w-3.5 h-3.5 text-ink-pale" />
+            </button>
+            <div
+              v-if="projectDropdownOpen"
+              class="absolute right-0 top-full mt-1 w-64 card-scroll p-2 z-50 max-h-80 overflow-y-auto"
+            >
+              <div class="px-3 py-2 text-xs text-ink-muted font-serif border-b border-ink/10 mb-1">
+                我的项目
+              </div>
+              <button
+                v-for="p in projectStore.activeProjects.slice(0, 10)"
+                :key="p.id"
+                class="w-full text-left px-3 py-2 rounded-sm text-sm font-serif hover:bg-vermilion/10 transition-colors flex items-center gap-2"
+                :class="{ 'bg-vermilion/10 text-vermilion': projectStore.currentProjectId === p.id }"
+                @click="selectProject(p.id)"
+              >
+                <Folder class="w-4 h-4 flex-shrink-0" />
+                <span class="truncate">{{ p.name }}</span>
+              </button>
+              <div class="border-t border-ink/10 mt-2 pt-2">
+                <RouterLink
+                  to="/projects"
+                  class="block w-full text-left px-3 py-1.5 text-xs text-vermilion font-serif hover:bg-vermilion/5 rounded-sm"
+                  @click="projectDropdownOpen = false"
+                >
+                  管理全部项目 →
+                </RouterLink>
+              </div>
+            </div>
+          </div>
+
+          <nav class="flex items-center gap-1">
+            <RouterLink
+              v-for="item in nav"
+              :key="item.to"
+              :to="item.to"
+              class="group relative px-3 py-2 rounded-[4px] font-serif text-sm transition-all duration-200"
+              :class="
+                route.path === item.to
+                  ? 'bg-vermilion text-paper-50 shadow'
+                  : 'text-ink hover:bg-paper-200'
+              "
+            >
+              <span class="inline-flex items-center gap-2">
+                <component :is="item.icon" class="w-4 h-4" />
+                <span class="text-[10px] opacity-60 mr-1">{{ item.juan }}</span>
+                {{ item.name }}
+              </span>
+            </RouterLink>
+          </nav>
+        </div>
       </div>
 
       <div
@@ -176,10 +265,18 @@ onMounted(() => {
         class="container mx-auto px-4 md:px-6 flex flex-col md:flex-row gap-3 items-center justify-between text-xs text-ink-muted font-serif"
       >
         <div>古籍文本避讳校验系统 · 本地端运行 · 数据存储于浏览器</div>
-        <div class="flex items-center gap-4">
-          <span>避讳字规则：{{ ruleStore.rules.length }} 条</span>
+        <div class="flex items-center gap-4 flex-wrap">
+          <span>
+            项目：<strong class="text-ink">{{ projectStore.projects.length }}</strong> 个
+          </span>
           <span>·</span>
-          <span>启用 {{ ruleStore.enabledRules.length }} 条</span>
+          <span>
+            避讳字规则：<strong class="text-ink">{{ ruleStore.rules.length }}</strong> 条
+          </span>
+          <span>·</span>
+          <span>
+            操作日志：<strong class="text-ink">{{ auditStore.logs.length }}</strong> 条
+          </span>
         </div>
       </div>
     </footer>
