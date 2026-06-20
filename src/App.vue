@@ -14,6 +14,7 @@ import {
   FolderOpen,
   History,
   ChevronDown,
+  BookMarked,
 } from 'lucide-vue-next';
 import { useRuleStore } from '@/stores/ruleStore';
 import { useDiffStore } from '@/stores/diffStore';
@@ -24,6 +25,7 @@ import { useAnnotationStore } from '@/stores/annotationStore';
 import { useReviewStore } from '@/stores/reviewStore';
 import { useRuleVersionStore } from '@/stores/ruleVersionStore';
 import { useTemplateStore } from '@/stores/templateStore';
+import { useCitationStore } from '@/stores/citationStore';
 
 const route = useRoute();
 const ruleStore = useRuleStore();
@@ -35,6 +37,7 @@ const annotationStore = useAnnotationStore();
 const reviewStore = useReviewStore();
 const ruleVersionStore = useRuleVersionStore();
 const templateStore = useTemplateStore();
+const citationStore = useCitationStore();
 
 const sidebarOpen = ref(false);
 const invalidateToast = ref<{ type: 'rule' | 'text'; message: string } | null>(null);
@@ -48,6 +51,7 @@ const nav = [
   { to: '/import', name: '文本导入', icon: FileText, juan: '卷二' },
   { to: '/review', name: '差异审核', icon: GitCompare, juan: '卷三' },
   { to: '/report', name: '校验报告', icon: ScrollText, juan: '卷四' },
+  { to: '/evidence', name: '典籍依据库', icon: BookMarked, juan: '卷五' },
   { to: '/audit', name: '操作日志', icon: History, juan: '卷六' },
 ];
 
@@ -65,6 +69,7 @@ onMounted(() => {
   reviewStore.load();
   ruleVersionStore.load();
   templateStore.load();
+  citationStore.load();
 
   ruleStore.$subscribe(
     () => {
@@ -272,6 +277,10 @@ function selectProject(projectId: string) {
           <span>·</span>
           <span>
             避讳字规则：<strong class="text-ink">{{ ruleStore.rules.length }}</strong> 条
+          </span>
+          <span>·</span>
+          <span>
+            典籍依据：<strong class="text-ink">{{ citationStore.totalCount }}</strong> 条
           </span>
           <span>·</span>
           <span>

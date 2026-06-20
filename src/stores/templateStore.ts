@@ -25,6 +25,7 @@ const DEFAULT_TEMPLATE: Omit<ReportTemplate, 'id' | 'createdAt' | 'updatedAt'> =
     { id: 'sec_rules', type: 'rule_info', title: '规则版本', visible: true, order: 5 },
     { id: 'sec_diffs', type: 'diff_list', title: '差异条目详情', visible: true, order: 6 },
     { id: 'sec_evidence', type: 'evidence_chain', title: '证据链', visible: true, order: 7 },
+    { id: 'sec_citation_summary', type: 'citation_summary', title: '引用清单与典籍依据', visible: true, order: 8 },
   ],
 };
 

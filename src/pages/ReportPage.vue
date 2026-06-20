@@ -27,6 +27,8 @@ import {
   CheckSquare,
   History,
   Link,
+  ShieldCheck,
+  Link2,
 } from 'lucide-vue-next';
 import { RouterLink, useRouter } from 'vue-router';
 import { useDiffStore } from '@/stores/diffStore';
@@ -38,7 +40,9 @@ import { useAnnotationStore } from '@/stores/annotationStore';
 import { useReviewStore } from '@/stores/reviewStore';
 import { useRuleVersionStore } from '@/stores/ruleVersionStore';
 import { useRuleStore } from '@/stores/ruleStore';
+import { useCitationStore } from '@/stores/citationStore';
 import type { VerificationReport, ReportTemplate, ReportSection, EvidenceChainItem } from '@/types';
+import { CITATION_TYPE_META, CREDIBILITY_META } from '@/types';
 import {
   generateReportJSON,
   generateReportTXT,
@@ -58,6 +62,7 @@ const annotationStore = useAnnotationStore();
 const reviewStore = useReviewStore();
 const ruleVersionStore = useRuleVersionStore();
 const ruleStore = useRuleStore();
+const citationStore = useCitationStore();
 const router = useRouter();
 
 const report = ref<VerificationReport | null>(null);
@@ -105,7 +110,13 @@ watch(
 );
 
 function buildReport() {
-  report.value = diffStore.buildReport();
+  const baseReport = diffStore.buildReport();
+  if (baseReport) {
+    const summary = citationStore.buildCitationSummary(projectStore.currentProjectId || undefined);
+    baseReport.citations = summary.citations;
+    baseReport.citationLinks = summary.links;
+  }
+  report.value = baseReport;
 }
 
 const currentTemplate = computed(() => {
@@ -191,6 +202,21 @@ const evidenceChain = computed<EvidenceChainItem[]>(() => {
     });
   }
 
+  if (projectStore.currentProject) {
+    const projectCitations = citationStore.getCitationsByProject(projectStore.currentProject.id);
+    projectCitations.forEach((c) => {
+      items.push({
+        id: 'cit_' + c.id,
+        type: 'document',
+        title: `典籍依据：${c.title}`,
+        content: `${CITATION_TYPE_META[c.citationType].label}｜${CREDIBILITY_META[c.credibility].label}｜${c.source}${c.page ? ' 第' + c.page + '页' : ''}`,
+        timestamp: c.updatedAt,
+        author: c.createdBy,
+        metadata: { citation: c },
+      });
+    });
+  }
+
   return items.sort((a, b) => a.timestamp - b.timestamp);
 });
 
@@ -203,6 +229,20 @@ const projectReviewFlows = computed(() => {
   if (!projectStore.currentProject) return [];
   return reviewStore.getFlowsByProject(projectStore.currentProject.id);
 });
+
+const citationSummary = computed(() => {
+  return citationStore.buildCitationSummary(projectStore.currentProjectId || undefined);
+});
+
+function getDiffCitations(diffEntryId: string) {
+  return citationStore.getCitationsWithLinksByDiffEntry(diffEntryId);
+}
+
+function getCredibilityShield(cred: string) {
+  if (cred === 'primary') return '★★★';
+  if (cred === 'secondary') return '★★☆';
+  return '★☆☆';
+}
 
 function flashToast(msg: string) {
   toast.value = msg;
@@ -253,6 +293,8 @@ function downloadEvidenceChain() {
     ruleVersions: ruleVersionStore.versions,
     annotations: projectAnnotations.value,
     reviewFlows: projectReviewFlows.value,
+    citations: citationSummary.value.citations,
+    citationLinks: citationSummary.value.links,
     evidenceChain: evidenceChain.value,
     auditLogs: auditStore.getLogsByProject(projectStore.currentProject.id),
     generatedAt: Date.now(),
@@ -441,6 +483,7 @@ const sectionTypeLabels: Record<string, string> = {
   rule_info: '规则版本',
   diff_list: '差异条目详情',
   evidence_chain: '证据链',
+  citation_summary: '引用清单',
   custom: '自定义',
 };
 </script>
@@ -825,6 +868,47 @@ const sectionTypeLabels: Record<string, string> = {
                 </div>
                 <div>{{ d.judgmentNote?.trim() || '（未填写判断依据）' }}</div>
               </div>
+
+              <div v-if="getDiffCitations(d.id).length > 0" class="mt-3 space-y-2">
+                <div class="text-xs text-ink-muted flex items-center gap-1 font-bold">
+                  <BookMarked class="w-3 h-3 text-vermilion" />
+                  典籍依据（{{ getDiffCitations(d.id).length }} 条）
+                </div>
+                <div
+                  v-for="item in getDiffCitations(d.id)"
+                  :key="item.citation.id"
+                  class="rounded-sm border border-ink/10 bg-paper-50 px-3 py-2"
+                >
+                  <div class="flex items-center gap-2 mb-1">
+                    <span
+                      class="text-[10px] px-1.5 py-0.5 rounded-sm border"
+                      :class="CREDIBILITY_META[item.citation.credibility].cls"
+                    >
+                      {{ CREDIBILITY_META[item.citation.credibility].label }}
+                    </span>
+                    <span
+                      class="text-[10px] px-1.5 py-0.5 rounded-sm border"
+                      :class="CITATION_TYPE_META[item.citation.citationType].cls"
+                    >
+                      {{ CITATION_TYPE_META[item.citation.citationType].label }}
+                    </span>
+                    <span class="text-sm font-serif font-medium text-ink truncate">{{ item.citation.title }}</span>
+                  </div>
+                  <div class="text-[11px] text-ink-muted font-serif mb-1">
+                    {{ item.citation.source }}
+                    <span v-if="item.citation.author"> · {{ item.citation.author }}</span>
+                    <span v-if="item.citation.dynasty"> · {{ item.citation.dynasty }}</span>
+                    <span v-if="item.citation.volume"> · {{ item.citation.volume }}</span>
+                    <span v-if="item.citation.page"> · 第{{ item.citation.page }}页</span>
+                  </div>
+                  <div class="text-xs font-serif text-ink-soft whitespace-pre-wrap leading-relaxed border-l-2 border-ink/15 pl-2 ml-1">
+                    {{ item.citation.content }}
+                  </div>
+                  <div v-if="item.link?.relevanceNote" class="text-[11px] text-vermilion/80 font-serif mt-1.5 italic">
+                    ▸ {{ item.link.relevanceNote }}
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -873,6 +957,77 @@ const sectionTypeLabels: Record<string, string> = {
             <div v-if="evidenceChain.length === 0" class="text-center py-8 text-ink-muted font-serif text-sm">
               暂无证据链数据
             </div>
+          </div>
+        </div>
+
+        <!-- 引用清单 -->
+        <div v-else-if="section.type === 'citation_summary'" class="card-scroll p-5">
+          <h3 class="font-title text-lg text-ink mb-4 flex items-center gap-2">
+            <BookMarked class="w-5 h-5 text-vermilion" />
+            {{ section.title }}
+          </h3>
+          <div class="scroll-divider mb-5" />
+          <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
+            <div class="rounded-sm bg-paper-100/70 border border-ink/10 p-3">
+              <div class="text-ink-muted text-xs mb-1">引用总数</div>
+              <div class="text-ink font-title text-xl">{{ citationSummary.stats.total }}</div>
+            </div>
+            <div class="rounded-sm bg-paper-100/70 border border-ink/10 p-3">
+              <div class="text-ink-muted text-xs mb-1">一级证据</div>
+              <div class="text-vermilion font-title text-xl">{{ citationSummary.stats.byCredibility.primary }}</div>
+            </div>
+            <div class="rounded-sm bg-paper-100/70 border border-ink/10 p-3">
+              <div class="text-ink-muted text-xs mb-1">关联差异条目</div>
+              <div class="text-azure font-title text-xl">{{ citationSummary.stats.linkedDiffEntries }}</div>
+            </div>
+            <div class="rounded-sm bg-paper-100/70 border border-ink/10 p-3">
+              <div class="text-ink-muted text-xs mb-1">关联链接</div>
+              <div class="text-moss font-title text-xl">{{ citationSummary.links.length }}</div>
+            </div>
+          </div>
+
+          <div v-if="citationSummary.citations.length > 0" class="space-y-3">
+            <div
+              v-for="c in citationSummary.citations"
+              :key="c.id"
+              class="rounded-sm border border-ink/15 p-4 bg-paper-50"
+            >
+              <div class="flex items-start justify-between gap-3 mb-2">
+                <div class="flex items-center gap-2 flex-1 min-w-0">
+                  <BookOpen class="w-4 h-4 text-vermilion flex-shrink-0" />
+                  <span class="font-serif text-sm text-ink font-medium truncate">{{ c.title }}</span>
+                  <span
+                    class="text-[10px] px-1.5 py-0.5 rounded-sm border flex-shrink-0"
+                    :class="CITATION_TYPE_META[c.citationType].cls"
+                  >
+                    {{ CITATION_TYPE_META[c.citationType].label }}
+                  </span>
+                  <span
+                    class="text-[10px] px-1.5 py-0.5 rounded-sm border flex-shrink-0"
+                    :class="CREDIBILITY_META[c.credibility].cls"
+                  >
+                    {{ getCredibilityShield(c.credibility) }} {{ CREDIBILITY_META[c.credibility].label }}
+                  </span>
+                </div>
+                <span v-if="c.diffEntryIds.length > 0" class="text-[10px] text-azure flex items-center gap-1 flex-shrink-0">
+                  <Link2 class="w-3 h-3" />
+                  关联 {{ c.diffEntryIds.length }} 条差异
+                </span>
+              </div>
+              <div class="text-xs font-serif text-ink-soft leading-relaxed pl-6 mb-2 line-clamp-3">
+                {{ c.content }}
+              </div>
+              <div class="text-[10px] text-ink-pale font-serif pl-6 flex flex-wrap gap-3">
+                <span>来源：{{ c.source }}</span>
+                <span v-if="c.author">作者：{{ c.author }}</span>
+                <span v-if="c.dynasty">朝代：{{ c.dynasty }}</span>
+                <span v-if="c.volume">卷次：{{ c.volume }}</span>
+                <span v-if="c.page">页码：{{ c.page }}</span>
+              </div>
+            </div>
+          </div>
+          <div v-else class="text-center py-8 text-ink-muted font-serif text-sm">
+            暂无引用数据
           </div>
         </div>
       </template>

@@ -33,6 +33,11 @@ const ACTION_LABELS: Record<AuditActionType, string> = {
   report_export: '导出报告',
   template_create: '创建模板',
   template_update: '更新模板',
+  citation_create: '新增典籍依据',
+  citation_update: '更新典籍依据',
+  citation_delete: '删除典籍依据',
+  citation_link: '关联典籍依据',
+  citation_unlink: '解除关联',
 };
 
 export const useAuditStore = defineStore('audit', () => {

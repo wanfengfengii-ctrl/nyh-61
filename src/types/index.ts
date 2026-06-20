@@ -59,6 +59,8 @@ export interface VerificationReport {
     pending: number;
   };
   judgments: DiffEntry[];
+  citations?: CitationEntry[];
+  citationLinks?: CitationDiffLink[];
 }
 
 export interface Project {
@@ -134,6 +136,51 @@ export interface ReviewAction {
   toStatus: ReviewStatus;
 }
 
+export type CitationType = 'taboo_literature' | 'collation_note' | 'version_excerpt' | 'image_page';
+
+export type CitationCredibility = 'primary' | 'secondary' | 'tertiary';
+
+export interface CitationEntry {
+  id: string;
+  title: string;
+  citationType: CitationType;
+  source: string;
+  author?: string;
+  dynasty?: string;
+  volume?: string;
+  page?: string;
+  content: string;
+  credibility: CitationCredibility;
+  tags: string[];
+  diffEntryIds: string[];
+  projectId?: string;
+  createdAt: number;
+  updatedAt: number;
+  createdBy: string;
+}
+
+export interface CitationDiffLink {
+  id: string;
+  citationId: string;
+  diffEntryId: string;
+  relevanceNote?: string;
+  linkedBy: string;
+  linkedAt: number;
+}
+
+export const CITATION_TYPE_META: Record<CitationType, { label: string; cls: string }> = {
+  taboo_literature: { label: '避讳制度文献', cls: 'text-rattan-dark border-rattan bg-rattan/30' },
+  collation_note: { label: '校勘记', cls: 'text-azure border-azure/40 bg-azure/10' },
+  version_excerpt: { label: '历代版本摘录', cls: 'text-moss border-moss/40 bg-moss/10' },
+  image_page: { label: '图像页码', cls: 'text-carmine border-carmine/40 bg-carmine/10' },
+};
+
+export const CREDIBILITY_META: Record<CitationCredibility, { label: string; cls: string; desc: string }> = {
+  primary: { label: '一级', cls: 'text-vermilion border-vermilion/40 bg-vermilion/10', desc: '原始典籍、善本原书、出土文献等一手资料' },
+  secondary: { label: '二级', cls: 'text-azure border-azure/40 bg-azure/10', desc: '后人的校勘记、注疏、影印本等间接依据' },
+  tertiary: { label: '三级', cls: 'text-ink-muted border-ink/20 bg-paper-100', desc: '今人研究论文、网络资料等参考性文献' },
+};
+
 export type AuditActionType =
   | 'project_create'
   | 'project_update'
@@ -153,7 +200,12 @@ export type AuditActionType =
   | 'report_generate'
   | 'report_export'
   | 'template_create'
-  | 'template_update';
+  | 'template_update'
+  | 'citation_create'
+  | 'citation_update'
+  | 'citation_delete'
+  | 'citation_link'
+  | 'citation_unlink';
 
 export interface AuditLog {
   id: string;
@@ -188,11 +240,17 @@ export interface ReportSection {
     | 'rule_info'
     | 'diff_list'
     | 'evidence_chain'
+    | 'citation_summary'
     | 'custom';
   title: string;
   visible: boolean;
   order: number;
   config?: Record<string, unknown>;
+}
+
+export interface DiffEntryWithCitations extends DiffEntry {
+  citations?: CitationEntry[];
+  citationLinks?: CitationDiffLink[];
 }
 
 export interface EvidenceChainItem {

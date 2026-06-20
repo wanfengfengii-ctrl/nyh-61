@@ -53,6 +53,12 @@ const routes: RouteRecordRaw[] = [
     },
   },
   {
+    path: '/evidence',
+    name: 'evidence',
+    component: () => import('@/pages/EvidenceBase.vue'),
+    meta: { title: '卷五 · 典籍依据库' },
+  },
+  {
     path: '/audit',
     name: 'audit',
     component: () => import('@/pages/AuditLog.vue'),

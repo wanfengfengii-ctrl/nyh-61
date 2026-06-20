@@ -163,6 +163,7 @@ export const useDiffStore = defineStore('diff', () => {
     matchedCount,
     lastInvalidation,
     load,
+    persist,
     runScan,
     invalidateDiffs,
     clearDiffs,

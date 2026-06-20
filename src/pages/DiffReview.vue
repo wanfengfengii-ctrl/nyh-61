@@ -22,6 +22,12 @@ import {
   RotateCcw,
   CornerDownRight,
   X,
+  Link2,
+  Unlink,
+  BookOpen,
+  ShieldCheck,
+  Search,
+  Plus,
 } from 'lucide-vue-next';
 import { RouterLink, useRouter } from 'vue-router';
 import { useDiffStore } from '@/stores/diffStore';
@@ -30,8 +36,10 @@ import { useAnnotationStore } from '@/stores/annotationStore';
 import { useReviewStore } from '@/stores/reviewStore';
 import { useAuditStore } from '@/stores/auditStore';
 import { useProjectStore } from '@/stores/projectStore';
+import { useCitationStore } from '@/stores/citationStore';
 import TextHighlightViewer from '@/components/TextHighlightViewer.vue';
-import type { DiffEntry, JudgmentType, ReviewFlow, Annotation } from '@/types';
+import type { DiffEntry, JudgmentType, ReviewFlow, Annotation, CitationType, CitationCredibility } from '@/types';
+import { CITATION_TYPE_META, CREDIBILITY_META } from '@/types';
 import {
   judgmentLabel,
   judgmentTagCls,
@@ -46,6 +54,7 @@ const annotationStore = useAnnotationStore();
 const reviewStore = useReviewStore();
 const auditStore = useAuditStore();
 const projectStore = useProjectStore();
+const citationStore = useCitationStore();
 const router = useRouter();
 
 onMounted(() => {
@@ -69,10 +78,31 @@ const filter = ref<FilterKey>('all');
 const focusText = ref(true);
 const draftJudgment = ref<JudgmentType>(null);
 const draftNote = ref('');
-const activeTab = ref<'judgment' | 'annotation' | 'review'>('judgment');
+const activeTab = ref<'judgment' | 'annotation' | 'review' | 'evidence'>('judgment');
 const newAnnotation = ref('');
 const reviewComment = ref('');
 const showReviewHistory = ref(false);
+const evidenceSearch = ref('');
+const linkRelevanceNote = ref('');
+const showLinkModal = ref(false);
+const linkTargetCitationId = ref<string | null>(null);
+const showCreateCitationModal = ref(false);
+
+const quickCitationForm = reactive({
+  title: '',
+  citationType: 'taboo_literature' as CitationType,
+  source: '',
+  author: '',
+  dynasty: '',
+  volume: '',
+  page: '',
+  content: '',
+  credibility: 'secondary' as CitationCredibility,
+  tags: '',
+  relevanceNote: '',
+});
+
+const quickCitationError = ref('');
 
 const filteredEntries = computed<DiffEntry[]>(() => {
   const all = diffStore.entries;
@@ -285,6 +315,167 @@ function resetReview() {
 function getUnresolvedAnnotationCount(diffId: string): number {
   return annotationStore.getByDiffEntry(diffId).filter((a) => !a.resolved).length;
 }
+
+const currentEvidenceList = computed(() => {
+  if (!diffStore.selectedId) return [];
+  return citationStore.getCitationsByDiffEntry(diffStore.selectedId);
+});
+
+const currentEvidenceGrouped = computed(() => {
+  if (!diffStore.selectedId) return { primary: [], secondary: [], tertiary: [] };
+  return citationStore.getCitationsByDiffAndCredibility(diffStore.selectedId);
+});
+
+const currentEvidenceWithLinks = computed(() => {
+  if (!diffStore.selectedId) return [];
+  return citationStore.getCitationsWithLinksByDiffEntry(diffStore.selectedId);
+});
+
+const availableCitationsForLink = computed(() => {
+  if (!diffStore.selectedId) return [];
+  const linked = citationStore.getCitationsByDiffEntry(diffStore.selectedId);
+  const linkedIds = new Set(linked.map((c) => c.id));
+  return citationStore.searchCitations(evidenceSearch.value, {
+    projectId: projectStore.currentProjectId || undefined,
+  }).filter((c) => !linkedIds.has(c.id));
+});
+
+function openLinkModal(citationId: string) {
+  linkTargetCitationId.value = citationId;
+  linkRelevanceNote.value = '';
+  showLinkModal.value = true;
+}
+
+function doLinkCitation() {
+  if (!diffStore.selectedId || !linkTargetCitationId.value) return;
+  const link = citationStore.linkToDiff(
+    linkTargetCitationId.value,
+    diffStore.selectedId,
+    linkRelevanceNote.value || undefined,
+  );
+  if (link) {
+    auditStore.addLog({
+      actionType: 'citation_link',
+      actor: '本地用户',
+      projectId: projectStore.currentProjectId || undefined,
+      targetId: diffStore.selectedId,
+      description: `关联典籍依据到差异条目`,
+      details: { citationId: linkTargetCitationId.value, relevanceNote: linkRelevanceNote.value },
+    });
+  }
+  showLinkModal.value = false;
+  linkTargetCitationId.value = null;
+  linkRelevanceNote.value = '';
+}
+
+function doUnlinkCitation(citationId: string) {
+  if (!diffStore.selectedId) return;
+  citationStore.unlinkFromDiff(citationId, diffStore.selectedId);
+  auditStore.addLog({
+    actionType: 'citation_unlink',
+    actor: '本地用户',
+    projectId: projectStore.currentProjectId || undefined,
+    targetId: diffStore.selectedId,
+    description: '解除典籍依据关联',
+    details: { citationId },
+  });
+}
+
+function openCreateCitationModal() {
+  quickCitationForm.title = '';
+  quickCitationForm.citationType = 'taboo_literature';
+  quickCitationForm.source = '';
+  quickCitationForm.author = '';
+  quickCitationForm.dynasty = '';
+  quickCitationForm.volume = '';
+  quickCitationForm.page = '';
+  quickCitationForm.content = '';
+  quickCitationForm.credibility = 'secondary';
+  quickCitationForm.tags = '';
+  quickCitationForm.relevanceNote = '';
+  quickCitationError.value = '';
+  showCreateCitationModal.value = true;
+}
+
+function submitQuickCitation() {
+  if (!quickCitationForm.title.trim()) {
+    quickCitationError.value = '典籍名称不能为空';
+    return;
+  }
+  if (!quickCitationForm.source.trim()) {
+    quickCitationError.value = '来源出处不能为空';
+    return;
+  }
+  if (!quickCitationForm.content.trim()) {
+    quickCitationError.value = '引文内容不能为空';
+    return;
+  }
+  if (!diffStore.selectedId) return;
+
+  const tagsArr = quickCitationForm.tags
+    .split(/[,，、;\s]+/)
+    .map((t) => t.trim())
+    .filter(Boolean);
+
+  const result = citationStore.addCitationAndLink(
+    {
+      title: quickCitationForm.title.trim(),
+      citationType: quickCitationForm.citationType,
+      source: quickCitationForm.source.trim(),
+      author: quickCitationForm.author.trim() || undefined,
+      dynasty: quickCitationForm.dynasty.trim() || undefined,
+      volume: quickCitationForm.volume.trim() || undefined,
+      page: quickCitationForm.page.trim() || undefined,
+      content: quickCitationForm.content.trim(),
+      credibility: quickCitationForm.credibility,
+      tags: tagsArr,
+      projectId: projectStore.currentProjectId || undefined,
+    },
+    diffStore.selectedId,
+    quickCitationForm.relevanceNote || undefined,
+  );
+
+  auditStore.addLog({
+    actionType: 'citation_create',
+    actor: '本地用户',
+    projectId: projectStore.currentProjectId || undefined,
+    targetId: result.citation.id,
+    description: `快速新增典籍依据并关联：${quickCitationForm.title}`,
+    details: { diffEntryId: diffStore.selectedId },
+  });
+
+  if (result.link) {
+    auditStore.addLog({
+      actionType: 'citation_link',
+      actor: '本地用户',
+      projectId: projectStore.currentProjectId || undefined,
+      targetId: diffStore.selectedId,
+      description: '关联典籍依据到差异条目',
+      details: { citationId: result.citation.id },
+    });
+  }
+
+  showCreateCitationModal.value = false;
+}
+
+function getCredibilityShield(cred: string) {
+  if (cred === 'primary') return '★★★';
+  if (cred === 'secondary') return '★★☆';
+  return '★☆☆';
+}
+
+const quickCitationTypeOptions: { value: CitationType; label: string }[] = [
+  { value: 'taboo_literature', label: '避讳制度文献' },
+  { value: 'collation_note', label: '校勘记' },
+  { value: 'version_excerpt', label: '历代版本摘录' },
+  { value: 'image_page', label: '图像页码' },
+];
+
+const quickCredibilityOptions: { value: CitationCredibility; label: string; desc: string }[] = [
+  { value: 'primary', label: '一级', desc: '原始典籍、善本原书、出土文献等一手资料' },
+  { value: 'secondary', label: '二级', desc: '后人的校勘记、注疏、影印本等间接依据' },
+  { value: 'tertiary', label: '三级', desc: '今人研究论文、网络资料等参考性文献' },
+];
 </script>
 
 <template>
@@ -444,6 +635,10 @@ function getUnresolvedAnnotationCount(diffId: string): number {
                   ({{ getUnresolvedAnnotationCount(d.id) }} 未解决)
                 </span>
               </span>
+              <span v-if="citationStore.getCitationsByDiffEntry(d.id).length > 0" class="flex items-center gap-1 text-rattan-dark">
+                <BookOpen class="w-3.5 h-3.5" />
+                {{ citationStore.getCitationsByDiffEntry(d.id).length }} 依据
+              </span>
               <span v-if="reviewStore.getFlowByDiffEntry(d.id, projectStore.currentProjectId || 'default')" class="flex items-center gap-1">
                 <Clock class="w-3.5 h-3.5" />
                 {{ REVIEW_STATUS_META[reviewStore.getFlowByDiffEntry(d.id, projectStore.currentProjectId || 'default')!.status].label }}
@@ -529,6 +724,7 @@ function getUnresolvedAnnotationCount(diffId: string): number {
                 { key: 'judgment', label: '判断标记', icon: CheckCircle },
                 { key: 'annotation', label: '协作批注', icon: MessageSquare },
                 { key: 'review', label: '复核流转', icon: Clock },
+                { key: 'evidence', label: '典籍依据', icon: BookOpen },
               ]"
               :key="tab.key"
               class="flex items-center gap-2 px-4 py-2 -mb-px border-b-2 font-serif text-sm transition-all"
@@ -546,6 +742,12 @@ function getUnresolvedAnnotationCount(diffId: string): number {
                 class="text-xs bg-paper-200 px-1.5 rounded-full"
               >
                 {{ currentAnnotations.length }}
+              </span>
+              <span
+                v-if="tab.key === 'evidence' && diffStore.selectedEntry"
+                class="text-xs bg-paper-200 px-1.5 rounded-full"
+              >
+                {{ currentEvidenceList.length }}
               </span>
             </button>
           </div>
@@ -872,9 +1074,323 @@ function getUnresolvedAnnotationCount(diffId: string): number {
                 </div>
               </div>
             </div>
+
+            <div v-show="activeTab === 'evidence'" class="space-y-4">
+              <div class="flex items-center justify-between">
+                <div class="text-sm font-serif text-ink-soft">
+                  典籍依据 · 共 {{ currentEvidenceList.length }} 条关联
+                  <span v-if="currentEvidenceList.length > 0" class="text-ink-muted">
+                    （按可信度分组展示）
+                  </span>
+                </div>
+                <button class="btn-secondary !py-1 !px-3 text-xs" @click="openCreateCitationModal">
+                  <Plus class="w-3.5 h-3.5" />
+                  快速新增典籍依据
+                </button>
+              </div>
+
+              <div v-if="currentEvidenceList.length > 0" class="space-y-4 max-h-[450px] overflow-y-auto pr-1">
+                <template v-for="credLevel in (['primary', 'secondary', 'tertiary'] as const)" :key="credLevel">
+                  <div v-if="currentEvidenceGrouped[credLevel].length > 0">
+                    <div
+                      class="text-xs font-serif mb-2 flex items-center gap-2"
+                      :class="{
+                        'text-vermilion': credLevel === 'primary',
+                        'text-azure': credLevel === 'secondary',
+                        'text-ink-muted': credLevel === 'tertiary',
+                      }"
+                    >
+                      <ShieldCheck class="w-3.5 h-3.5" />
+                      {{ CREDIBILITY_META[credLevel].label }}证据（{{ getCredibilityShield(credLevel) }}）
+                      <span class="text-ink-pale font-mono">· {{ currentEvidenceGrouped[credLevel].length }} 条</span>
+                      <span class="text-[10px] text-ink-pale font-normal ml-1">{{ CREDIBILITY_META[credLevel].desc }}</span>
+                    </div>
+                    <div class="space-y-2 ml-3 border-l-2 pl-3"
+                      :class="{
+                        'border-vermilion/30': credLevel === 'primary',
+                        'border-azure/30': credLevel === 'secondary',
+                        'border-ink/10': credLevel === 'tertiary',
+                      }"
+                    >
+                      <div
+                        v-for="item in currentEvidenceWithLinks.filter(x => x.citation.credibility === credLevel)"
+                        :key="item.citation.id"
+                        class="rounded-sm border p-3 bg-paper-50"
+                        :class="{
+                          'border-vermilion/30 bg-vermilion/5': credLevel === 'primary',
+                          'border-azure/20 bg-azure/5': credLevel === 'secondary',
+                          'border-ink/15': credLevel === 'tertiary',
+                        }"
+                      >
+                        <div class="flex items-start justify-between mb-2">
+                          <div class="flex items-center gap-2 flex-1 min-w-0">
+                            <BookOpen class="w-4 h-4 text-vermilion flex-shrink-0" />
+                            <span class="font-serif text-sm text-ink truncate font-medium">{{ item.citation.title }}</span>
+                            <span
+                              class="text-[10px] px-1.5 py-0.5 rounded-sm border flex-shrink-0"
+                              :class="CITATION_TYPE_META[item.citation.citationType].cls"
+                            >
+                              {{ CITATION_TYPE_META[item.citation.citationType].label }}
+                            </span>
+                          </div>
+                          <button
+                            class="btn-ghost !p-1 hover:!text-carmine flex-shrink-0"
+                            @click="doUnlinkCitation(item.citation.id)"
+                            title="解除关联"
+                          >
+                            <Unlink class="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                        <div class="text-xs font-serif text-ink leading-relaxed pl-6 bg-paper-100/50 rounded-sm p-2 whitespace-pre-wrap">
+                          {{ item.citation.content }}
+                        </div>
+                        <div class="mt-2 text-[10px] text-ink-pale font-serif pl-6 flex flex-wrap gap-x-3 gap-y-1">
+                          <span>来源：{{ item.citation.source }}</span>
+                          <span v-if="item.citation.author">作者：{{ item.citation.author }}</span>
+                          <span v-if="item.citation.dynasty">朝代：{{ item.citation.dynasty }}</span>
+                          <span v-if="item.citation.volume">卷次：{{ item.citation.volume }}</span>
+                          <span v-if="item.citation.page">页码：{{ item.citation.page }}</span>
+                        </div>
+                        <div
+                          v-if="item.link?.relevanceNote"
+                          class="mt-2 text-[10px] font-serif text-vermilion pl-6 flex items-start gap-1"
+                        >
+                          <CornerDownRight class="w-3 h-3 mt-0.5 flex-shrink-0" />
+                          <span>关联说明：{{ item.link.relevanceNote }}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </template>
+              </div>
+
+              <div v-else class="text-center py-6 text-ink-muted font-serif text-sm rounded-sm border border-dashed border-ink/10 bg-paper-50/50">
+                <BookOpen class="w-8 h-8 mx-auto text-ink-pale mb-2" />
+                <div>暂未关联典籍依据</div>
+                <div class="text-xs mt-1">从下方选择典籍关联，或点击右上角「快速新增」创建新依据</div>
+              </div>
+
+              <div class="scroll-divider" />
+
+              <div>
+                <div class="text-sm font-serif text-ink-soft mb-2 flex items-center gap-2">
+                  <Link2 class="w-4 h-4 text-vermilion" />
+                  关联已有典籍依据
+                </div>
+                <div class="relative mb-2">
+                  <Search class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-ink-pale" />
+                  <input
+                    v-model="evidenceSearch"
+                    type="text"
+                    placeholder="搜索典籍名称、来源或内容……"
+                    class="w-full rounded-md border border-ink/20 bg-paper-50 pl-9 pr-3 py-2 font-serif text-sm focus:border-vermilion focus:outline-none focus:ring-2 focus:ring-vermilion/20"
+                  />
+                </div>
+                <div class="max-h-40 overflow-y-auto space-y-1.5">
+                  <div
+                    v-for="c in availableCitationsForLink.slice(0, 10)"
+                    :key="c.id"
+                    class="flex items-center gap-2 rounded-sm border border-ink/10 bg-paper-50 p-2 hover:border-vermilion/30 transition-all cursor-pointer"
+                    @click="openLinkModal(c.id)"
+                  >
+                    <BookOpen class="w-3.5 h-3.5 text-ink-pale flex-shrink-0" />
+                    <div class="flex-1 min-w-0">
+                      <div class="font-serif text-xs text-ink truncate">{{ c.title }}</div>
+                      <div class="text-[10px] text-ink-muted truncate">{{ c.source }}</div>
+                    </div>
+                    <span
+                      class="text-[10px] px-1 py-0.5 rounded-sm border flex-shrink-0"
+                      :class="CREDIBILITY_META[c.credibility].cls"
+                    >
+                      {{ CREDIBILITY_META[c.credibility].label }}
+                    </span>
+                    <Link2 class="w-3.5 h-3.5 text-vermilion flex-shrink-0" />
+                  </div>
+                  <div
+                    v-if="availableCitationsForLink.length === 0"
+                    class="text-center py-3 text-ink-muted font-serif text-xs"
+                  >
+                    {{ evidenceSearch ? '没有找到匹配的典籍依据' : '所有典籍依据已关联，或尚未录入' }}
+                  </div>
+                </div>
+              </div>
+            </div>
           </template>
         </div>
       </div>
     </div>
+
+    <Teleport to="body">
+      <div
+        v-if="showLinkModal"
+        class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-ink/40"
+        @click.self="showLinkModal = false"
+      >
+        <div class="card-scroll w-full max-w-md p-6 animate-fade-in">
+          <div class="flex items-start justify-between mb-4">
+            <h3 class="font-title text-lg text-ink">关联典籍依据</h3>
+            <button class="btn-ghost" @click="showLinkModal = false">
+              <X class="w-4 h-4" />
+            </button>
+          </div>
+          <div class="scroll-divider mb-4" />
+          <div class="mb-4">
+            <label class="block font-serif text-sm text-ink-soft mb-1">相关性说明（可选）</label>
+            <textarea
+              v-model="linkRelevanceNote"
+              rows="3"
+              placeholder="说明此典籍依据与当前差异条目的关联，如：该条校勘记直接论证了此处的避讳改字……"
+              class="text-area-paper text-sm"
+            />
+          </div>
+          <div class="flex justify-end gap-2">
+            <button class="btn-secondary" @click="showLinkModal = false">取消</button>
+            <button class="btn-primary" @click="doLinkCitation">
+              <Link2 class="w-4 h-4" />
+              确认关联
+            </button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
+    <Teleport to="body">
+      <div
+        v-if="showCreateCitationModal"
+        class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-ink/40"
+        @click.self="showCreateCitationModal = false"
+      >
+        <div class="card-scroll w-full max-w-2xl p-6 max-h-[85vh] overflow-y-auto animate-fade-in">
+          <div class="flex items-start justify-between mb-4">
+            <h3 class="font-title text-xl text-ink">快速新增典籍依据</h3>
+            <button class="btn-ghost" @click="showCreateCitationModal = false">
+              <X class="w-4 h-4" />
+            </button>
+          </div>
+          <div class="scroll-divider mb-5" />
+
+          <div class="space-y-4">
+            <div>
+              <label class="block font-serif text-sm text-ink-soft mb-1">典籍名称 <span class="text-carmine">*</span></label>
+              <input
+                v-model="quickCitationForm.title"
+                placeholder="如：《史记·高祖本纪》避讳改字考"
+                class="w-full rounded-md border border-ink/20 bg-paper-50 px-3 py-2 font-serif text-sm focus:border-vermilion focus:outline-none focus:ring-2 focus:ring-vermilion/20"
+              />
+            </div>
+
+            <div class="grid grid-cols-2 gap-4">
+              <div>
+                <label class="block font-serif text-sm text-ink-soft mb-1">典籍类型 <span class="text-carmine">*</span></label>
+                <select
+                  v-model="quickCitationForm.citationType"
+                  class="w-full rounded-md border border-ink/20 bg-paper-50 px-3 py-2 font-serif text-sm focus:border-vermilion focus:outline-none focus:ring-2 focus:ring-vermilion/20"
+                >
+                  <option v-for="ct in quickCitationTypeOptions" :key="ct.value" :value="ct.value">{{ ct.label }}</option>
+                </select>
+              </div>
+              <div>
+                <label class="block font-serif text-sm text-ink-soft mb-1">可信度分级 <span class="text-carmine">*</span></label>
+                <select
+                  v-model="quickCitationForm.credibility"
+                  class="w-full rounded-md border border-ink/20 bg-paper-50 px-3 py-2 font-serif text-sm focus:border-vermilion focus:outline-none focus:ring-2 focus:ring-vermilion/20"
+                >
+                  <option v-for="cr in quickCredibilityOptions" :key="cr.value" :value="cr.value">{{ cr.label }} — {{ cr.desc }}</option>
+                </select>
+              </div>
+            </div>
+
+            <div>
+              <label class="block font-serif text-sm text-ink-soft mb-1">来源出处 <span class="text-carmine">*</span></label>
+              <input
+                v-model="quickCitationForm.source"
+                placeholder="如：中华书局1982年版、四库全书本、敦煌P.2536号写本"
+                class="w-full rounded-md border border-ink/20 bg-paper-50 px-3 py-2 font-serif text-sm focus:border-vermilion focus:outline-none focus:ring-2 focus:ring-vermilion/20"
+              />
+            </div>
+
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <div>
+                <label class="block font-serif text-sm text-ink-soft mb-1">作者</label>
+                <input
+                  v-model="quickCitationForm.author"
+                  placeholder="如：司马贞"
+                  class="w-full rounded-md border border-ink/20 bg-paper-50 px-3 py-2 font-serif text-sm focus:border-vermilion focus:outline-none focus:ring-2 focus:ring-vermilion/20"
+                />
+              </div>
+              <div>
+                <label class="block font-serif text-sm text-ink-soft mb-1">朝代</label>
+                <input
+                  v-model="quickCitationForm.dynasty"
+                  placeholder="如：唐代"
+                  class="w-full rounded-md border border-ink/20 bg-paper-50 px-3 py-2 font-serif text-sm focus:border-vermilion focus:outline-none focus:ring-2 focus:ring-vermilion/20"
+                />
+              </div>
+              <div>
+                <label class="block font-serif text-sm text-ink-soft mb-1">卷次</label>
+                <input
+                  v-model="quickCitationForm.volume"
+                  placeholder="如：卷三"
+                  class="w-full rounded-md border border-ink/20 bg-paper-50 px-3 py-2 font-serif text-sm focus:border-vermilion focus:outline-none focus:ring-2 focus:ring-vermilion/20"
+                />
+              </div>
+              <div>
+                <label class="block font-serif text-sm text-ink-soft mb-1">页码</label>
+                <input
+                  v-model="quickCitationForm.page"
+                  placeholder="如：第126页、P.5v"
+                  class="w-full rounded-md border border-ink/20 bg-paper-50 px-3 py-2 font-serif text-sm focus:border-vermilion focus:outline-none focus:ring-2 focus:ring-vermilion/20"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label class="block font-serif text-sm text-ink-soft mb-1">引文内容 <span class="text-carmine">*</span></label>
+              <textarea
+                v-model="quickCitationForm.content"
+                rows="4"
+                placeholder="录入典籍原文或校勘记内容……"
+                class="text-area-paper text-sm"
+              />
+            </div>
+
+            <div>
+              <label class="block font-serif text-sm text-ink-soft mb-1">标签</label>
+              <input
+                v-model="quickCitationForm.tags"
+                placeholder="用逗号或顿号分隔，如：唐讳、世民改字、贞观"
+                class="w-full rounded-md border border-ink/20 bg-paper-50 px-3 py-2 font-serif text-sm focus:border-vermilion focus:outline-none focus:ring-2 focus:ring-vermilion/20"
+              />
+            </div>
+
+            <div class="rounded-sm border border-rattan/30 bg-rattan/10 p-3">
+              <label class="block font-serif text-sm text-ink-soft mb-1">相关性说明（可选）</label>
+              <textarea
+                v-model="quickCitationForm.relevanceNote"
+                rows="2"
+                placeholder="说明此典籍依据与当前差异条目的关联……"
+                class="w-full rounded-md border border-ink/20 bg-paper-50 px-3 py-2 font-serif text-xs focus:border-vermilion focus:outline-none resize-none"
+              />
+            </div>
+          </div>
+
+          <div
+            v-if="quickCitationError"
+            class="mt-4 rounded-sm border border-carmine/40 bg-carmine/10 p-3 text-sm font-serif text-carmine"
+          >
+            {{ quickCitationError }}
+          </div>
+
+          <div class="scroll-divider my-4" />
+          <div class="flex justify-end gap-2">
+            <button class="btn-secondary" @click="showCreateCitationModal = false">取消</button>
+            <button class="btn-primary" @click="submitQuickCitation">
+              <Check class="w-4 h-4" />
+              创建并关联
+            </button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
   </div>
 </template>
