@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia';
-import { ref, computed } from 'vue';
+import { ref, computed, watch } from 'vue';
+import { useDiffStore } from './diffStore';
 
 const TEXT_KEY = 'ancientscrutiny_texts_v1';
 
@@ -29,6 +30,7 @@ export const useTextStore = defineStore('text', () => {
   const originalText = ref('');
   const revisedText = ref('');
   const loadedAt = ref<number | null>(null);
+  const initialized = ref(false);
 
   function load() {
     try {
@@ -49,6 +51,7 @@ export const useTextStore = defineStore('text', () => {
       revisedText.value = SAMPLE_REVISED;
       loadedAt.value = Date.now();
     }
+    initialized.value = true;
   }
 
   function persist() {
@@ -86,6 +89,15 @@ export const useTextStore = defineStore('text', () => {
   const originalCharCount = computed(() => originalText.value.length);
   const revisedCharCount = computed(() => revisedText.value.length);
   const hasBothTexts = computed(() => originalText.value.trim().length > 0 && revisedText.value.trim().length > 0);
+
+  watch(
+    [originalText, revisedText],
+    () => {
+      if (!initialized.value) return;
+      const diffStore = useDiffStore();
+      diffStore.invalidateDiffs('text');
+    },
+  );
 
   return {
     originalText,

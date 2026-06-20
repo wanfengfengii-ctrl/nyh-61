@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, onMounted } from 'vue';
+import { computed, ref, onMounted, watch } from 'vue';
 import {
   Download,
   FileJson,
@@ -12,7 +12,7 @@ import {
   Calendar,
   Hash,
 } from 'lucide-vue-next';
-import { RouterLink } from 'vue-router';
+import { RouterLink, useRouter } from 'vue-router';
 import { useDiffStore } from '@/stores/diffStore';
 import { useTextStore } from '@/stores/textStore';
 import type { VerificationReport } from '@/types';
@@ -28,13 +28,30 @@ import { JUDGMENT_META } from '@/types';
 
 const diffStore = useDiffStore();
 const textStore = useTextStore();
+const router = useRouter();
 
 const report = ref<VerificationReport | null>(null);
 const toast = ref('');
 
+function guard() {
+  if (diffStore.scanStatus !== 'done' || diffStore.entries.length === 0) {
+    router.replace({ path: '/import', query: { reason: 'nodiff' } });
+    return false;
+  }
+  return true;
+}
+
 onMounted(() => {
-  buildReport();
+  if (guard()) buildReport();
 });
+
+watch(
+  [() => diffStore.scanStatus, () => diffStore.entries.length],
+  () => {
+    if (!guard()) return;
+    buildReport();
+  },
+);
 
 function buildReport() {
   report.value = diffStore.buildReport();

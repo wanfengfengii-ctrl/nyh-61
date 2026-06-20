@@ -27,7 +27,7 @@ const routes: RouteRecordRaw[] = [
     beforeEnter: () => {
       const textStore = useTextStore();
       const diffStore = useDiffStore();
-      if (!textStore.hasBothTexts && diffStore.entries.length === 0) {
+      if (!textStore.hasBothTexts || diffStore.scanStatus !== 'done' || diffStore.entries.length === 0) {
         return { path: '/import', query: { reason: 'needtext' } };
       }
       return true;
@@ -40,7 +40,7 @@ const routes: RouteRecordRaw[] = [
     meta: { title: '卷四 · 校验报告' },
     beforeEnter: () => {
       const diffStore = useDiffStore();
-      if (diffStore.entries.length === 0) {
+      if (diffStore.scanStatus !== 'done' || diffStore.entries.length === 0) {
         return { path: '/import', query: { reason: 'nodiff' } };
       }
       return true;

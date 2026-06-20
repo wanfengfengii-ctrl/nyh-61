@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch, nextTick, reactive } from 'vue';
+import { computed, ref, watch, nextTick, reactive, onMounted } from 'vue';
 import {
   ChevronLeft,
   ChevronRight,
@@ -14,7 +14,7 @@ import {
   EyeOff,
   ScrollText,
 } from 'lucide-vue-next';
-import { RouterLink } from 'vue-router';
+import { RouterLink, useRouter } from 'vue-router';
 import { useDiffStore } from '@/stores/diffStore';
 import { useTextStore } from '@/stores/textStore';
 import TextHighlightViewer from '@/components/TextHighlightViewer.vue';
@@ -28,6 +28,22 @@ import { JUDGMENT_META } from '@/types';
 
 const diffStore = useDiffStore();
 const textStore = useTextStore();
+const router = useRouter();
+
+onMounted(() => {
+  if (diffStore.scanStatus !== 'done' || diffStore.entries.length === 0) {
+    router.replace({ path: '/import', query: { reason: 'needtext' } });
+  }
+});
+
+watch(
+  [() => diffStore.scanStatus, () => diffStore.entries.length],
+  () => {
+    if (diffStore.scanStatus !== 'done' || diffStore.entries.length === 0) {
+      router.replace({ path: '/import', query: { reason: 'needtext' } });
+    }
+  },
+);
 
 type FilterKey = 'all' | 'unjudged' | Exclude<JudgmentType, null>;
 

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { watch, ref, computed, onMounted } from 'vue';
 import { useRoute, RouterLink, RouterView } from 'vue-router';
-import { BookOpen, FileText, GitCompare, ScrollText, AlertTriangle, Menu, X } from 'lucide-vue-next';
+import { BookOpen, FileText, GitCompare, ScrollText, AlertTriangle, Menu, X, Check } from 'lucide-vue-next';
 import { useRuleStore } from '@/stores/ruleStore';
 import { useDiffStore } from '@/stores/diffStore';
 
@@ -10,12 +10,9 @@ const ruleStore = useRuleStore();
 const diffStore = useDiffStore();
 
 const sidebarOpen = ref(false);
+const invalidateToast = ref<{ type: 'rule' | 'text'; message: string } | null>(null);
 
-const showStaleBanner = computed(
-  () =>
-    (diffStore.scanStatus === 'stale' && diffStore.entries.length > 0) ||
-    (ruleStore.changedSinceLastScan && diffStore.entries.length > 0),
-);
+const showStaleBanner = computed(() => invalidateToast.value !== null);
 
 const nav = [
   { to: '/rules', name: '规则表', icon: BookOpen, juan: '卷一' },
@@ -24,24 +21,30 @@ const nav = [
   { to: '/report', name: '校验报告', icon: ScrollText, juan: '卷四' },
 ];
 
-function handleReScan() {
-  diffStore.invalidateDiffs();
+function dismissToast() {
+  invalidateToast.value = null;
 }
 
 onMounted(() => {
-  if (ruleStore.changedSinceLastScan && diffStore.entries.length > 0) {
-    diffStore.invalidateDiffs();
-  }
-});
+  ruleStore.$subscribe(
+    () => {
+      if (diffStore.scanStatus === 'done' || diffStore.entries.length > 0) {
+        diffStore.invalidateDiffs('rule');
+      }
+    },
+    { detached: true },
+  );
 
-watch(
-  () => ruleStore.rules.length,
-  () => {
-    if (diffStore.entries.length > 0) {
-      diffStore.invalidateDiffs();
-    }
-  },
-);
+  watch(
+    () => diffStore.lastInvalidation,
+    (v) => {
+      if (v) {
+        invalidateToast.value = { type: v.type, message: v.message };
+        setTimeout(dismissToast, 6000);
+      }
+    },
+  );
+});
 </script>
 
 <template>
@@ -96,24 +99,27 @@ watch(
       </div>
 
       <div
-        v-if="showStaleBanner"
-        class="border-t border-vermilion/20 bg-rattan/20"
+        v-if="showStaleBanner && invalidateToast"
+        class="border-t border-vermilion/20 bg-rattan/25"
       >
         <div
           class="container mx-auto px-4 md:px-6 py-2 flex flex-col sm:flex-row items-start sm:items-center gap-3 text-sm font-serif text-ink"
         >
-          <div class="flex items-center gap-2 text-vermilion">
-            <AlertTriangle class="w-4 h-4" />
+          <div class="flex items-center gap-2 text-ink">
+            <AlertTriangle class="w-4 h-4 text-vermilion flex-shrink-0" />
             <span>
-              避讳字规则表已修改，当前差异判断结果可能失准，
-              <strong>请回到「卷二·文本导入」重新执行差异扫描。</strong>
+              <strong class="text-vermilion mr-1">
+                {{ invalidateToast.type === 'rule' ? '【规则已变更】' : '【文本已变更】' }}
+              </strong>
+              {{ invalidateToast.message }}
             </span>
           </div>
           <div class="ml-auto flex gap-2">
             <RouterLink to="/import" class="btn-primary !py-1 !px-3 text-xs">
               前往重新扫描
             </RouterLink>
-            <button class="btn-ghost !py-1 !px-3 text-xs" @click="handleReScan">
+            <button class="btn-ghost !py-1 !px-3 text-xs" @click="dismissToast">
+              <Check class="w-3 h-3 mr-1" />
               知晓
             </button>
           </div>

@@ -13,6 +13,7 @@ export const useDiffStore = defineStore('diff', () => {
   const scanStatus = ref<ScanStatus>('idle');
   const scannedAt = ref<number | null>(null);
   const selectedId = ref<string | null>(null);
+  const lastInvalidation = ref<{ type: 'rule' | 'text'; message: string; at: number } | null>(null);
 
   function load() {
     try {
@@ -63,12 +64,22 @@ export const useDiffStore = defineStore('diff', () => {
     }
   }
 
-  function invalidateDiffs(reason: string = '规则表已变更') {
-    if (entries.value.length === 0 && scanStatus.value !== 'done') return;
-    scanStatus.value = 'stale';
-    entries.value = entries.value.map((d) => ({ ...d, matchedRule: undefined, matchedRuleId: undefined }));
-    persist();
-    return reason;
+  function invalidateDiffs(reason: 'rule' | 'text' = 'rule') {
+    if (scanStatus.value === 'idle' && entries.value.length === 0) return;
+    const hadData = entries.value.length > 0;
+    const message =
+      reason === 'rule'
+        ? '避讳字规则表已修改，已清空旧的扫描结果与判断，请重新执行差异扫描。'
+        : '原文或校改文本已变动，已清空旧的扫描结果与判断，请重新执行差异扫描。';
+    entries.value = [];
+    scanStatus.value = 'idle';
+    scannedAt.value = null;
+    selectedId.value = null;
+    localStorage.removeItem(DIFF_KEY);
+    if (hadData) {
+      lastInvalidation.value = { type: reason, message, at: Date.now() };
+    }
+    return { hadData, message };
   }
 
   function clearDiffs() {
@@ -114,7 +125,12 @@ export const useDiffStore = defineStore('diff', () => {
     return { total, ...stats, judged: total - stats.unjudged };
   });
 
-  const allJudged = computed(() => entries.value.length > 0 && statistics.value.unjudged === 0);
+  const allJudged = computed(
+    () =>
+      scanStatus.value === 'done' &&
+      entries.value.length > 0 &&
+      statistics.value.unjudged === 0,
+  );
 
   const matchedCount = computed(() => entries.value.filter((d) => !!d.matchedRuleId).length);
 
@@ -145,6 +161,7 @@ export const useDiffStore = defineStore('diff', () => {
     statistics,
     allJudged,
     matchedCount,
+    lastInvalidation,
     load,
     runScan,
     invalidateDiffs,
