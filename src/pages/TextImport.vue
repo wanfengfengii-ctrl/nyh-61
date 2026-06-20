@@ -17,11 +17,15 @@ import { RouterLink, useRoute } from 'vue-router';
 import { useTextStore } from '@/stores/textStore';
 import { useDiffStore } from '@/stores/diffStore';
 import { useRuleStore } from '@/stores/ruleStore';
+import { useProjectStore } from '@/stores/projectStore';
+import { useAuditStore } from '@/stores/auditStore';
 import { formatDate } from '@/utils/exportEngine';
 
 const textStore = useTextStore();
 const diffStore = useDiffStore();
 const ruleStore = useRuleStore();
+const projectStore = useProjectStore();
+const auditStore = useAuditStore();
 const route = useRoute();
 
 const originalLocal = ref(textStore.originalText);
@@ -67,6 +71,42 @@ async function handleScan() {
     scanError.value = res.error || '扫描失败';
     return;
   }
+
+  if (projectStore.currentProject && diffStore.scannedAt) {
+    projectStore.addScanHistory({
+      projectId: projectStore.currentProject.id,
+      scannedAt: diffStore.scannedAt,
+      scannedBy: '本地用户',
+      ruleVersionTag: projectStore.currentProject.ruleVersionTag,
+      totalDiffs: diffStore.statistics.total,
+      statistics: {
+        taboo: diffStore.statistics.taboo,
+        error: diffStore.statistics.error,
+        variant: diffStore.statistics.variant,
+        pending: diffStore.statistics.pending,
+        unjudged: diffStore.statistics.unjudged,
+      },
+      originalText: textStore.originalText,
+      revisedText: textStore.revisedText,
+      entries: diffStore.entries.map((e) => ({ ...e })),
+    });
+  }
+
+  auditStore.addLog({
+    actionType: 'scan_run',
+    actor: '本地用户',
+    projectId: projectStore.currentProjectId || undefined,
+    description: `执行差异扫描，共检出 ${diffStore.statistics.total} 处差异`,
+    details: {
+      total: diffStore.statistics.total,
+      matched: diffStore.matchedCount,
+      taboo: diffStore.statistics.taboo,
+      variant: diffStore.statistics.variant,
+      error: diffStore.statistics.error,
+      pending: diffStore.statistics.pending,
+    },
+  });
+
   showSuccess.value = true;
   setTimeout(() => (showSuccess.value = false), 2500);
 }

@@ -20,6 +20,8 @@ import { RouterLink, useRouter } from 'vue-router';
 import { useProjectStore } from '@/stores/projectStore';
 import { useAuditStore } from '@/stores/auditStore';
 import { useAnnotationStore } from '@/stores/annotationStore';
+import { useDiffStore } from '@/stores/diffStore';
+import { useTextStore } from '@/stores/textStore';
 import type { Project } from '@/types';
 import { DYNASTY_OPTIONS } from '@/types';
 import { formatDate } from '@/utils/exportEngine';
@@ -27,6 +29,8 @@ import { formatDate } from '@/utils/exportEngine';
 const projectStore = useProjectStore();
 const auditStore = useAuditStore();
 const annotationStore = useAnnotationStore();
+const diffStore = useDiffStore();
+const textStore = useTextStore();
 const router = useRouter();
 
 const search = ref('');
@@ -201,7 +205,31 @@ function getUnresolvedCount(projectId: string): number {
 function loadScan(scanId: string) {
   const scan = projectStore.getScanById(scanId);
   if (!scan) return;
-  alert(`加载历史扫描记录：${formatDate(scan.scannedAt)}，共 ${scan.totalDiffs} 处差异`);
+
+  if (scan.originalText !== undefined && scan.revisedText !== undefined) {
+    textStore.setTexts(scan.originalText, scan.revisedText);
+  }
+
+  diffStore.entries = scan.entries.map((e) => ({ ...e }));
+  diffStore.scanStatus = 'done';
+  diffStore.scannedAt = scan.scannedAt;
+  diffStore.selectedId = scan.entries[0]?.id || null;
+  diffStore.persist();
+
+  if (historyProjectId.value) {
+    projectStore.setCurrentProject(historyProjectId.value);
+  }
+
+  auditStore.addLog({
+    actionType: 'scan_run',
+    actor: '本地用户',
+    projectId: historyProjectId.value || undefined,
+    description: `加载历史扫描记录：${formatDate(scan.scannedAt)}`,
+    details: { scanId, totalDiffs: scan.totalDiffs },
+  });
+
+  showHistory.value = false;
+  router.push('/import');
 }
 </script>
 
