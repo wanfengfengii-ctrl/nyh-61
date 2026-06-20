@@ -438,6 +438,42 @@ export const useGlyphStore = defineStore('glyph', () => {
     return count;
   }
 
+  function buildGlyphSummary(projectId?: string): {
+    glyphs: GlyphEntry[];
+    links: GlyphDiffLink[];
+    stats: {
+      total: number;
+      totalVariants: number;
+      totalEvolutionSteps: number;
+      linkedDiffEntries: number;
+    };
+  } {
+    const projectGlyphs = projectId
+      ? glyphEntries.value.filter((g) => g.projectId === projectId)
+      : glyphEntries.value;
+    const projectLinks = projectId
+      ? glyphLinks.value.filter((l) => projectGlyphs.some((g) => g.id === l.glyphEntryId))
+      : glyphLinks.value;
+    
+    const totalVariants = projectGlyphs.reduce((sum, g) => sum + g.variants.length, 0);
+    const totalEvolutionSteps = projectGlyphs.reduce(
+      (sum, g) => sum + (g.evolutionChain?.length || 0),
+      0
+    );
+    const linkedDiffIds = new Set(projectLinks.map((l) => l.diffEntryId));
+
+    return {
+      glyphs: projectGlyphs,
+      links: projectLinks,
+      stats: {
+        total: projectGlyphs.length,
+        totalVariants,
+        totalEvolutionSteps,
+        linkedDiffEntries: linkedDiffIds.size,
+      },
+    };
+  }
+
   const totalCount = computed(() => glyphEntries.value.length);
   const totalVariants = computed(() =>
     glyphEntries.value.reduce((sum, g) => sum + g.variants.length, 0)
@@ -479,6 +515,7 @@ export const useGlyphStore = defineStore('glyph', () => {
     findSimilarVariants,
     getGlyphsByProject,
     deleteGlyphsByProject,
+    buildGlyphSummary,
     selectGlyph,
   };
 });

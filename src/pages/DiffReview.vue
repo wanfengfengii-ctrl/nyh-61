@@ -30,6 +30,9 @@ import {
   Plus,
   Image,
   Upload,
+  Type,
+  ListTree,
+  Sparkles as SparklesIcon,
 } from 'lucide-vue-next';
 import { RouterLink, useRouter } from 'vue-router';
 import { useDiffStore } from '@/stores/diffStore';
@@ -39,6 +42,7 @@ import { useReviewStore } from '@/stores/reviewStore';
 import { useAuditStore } from '@/stores/auditStore';
 import { useProjectStore } from '@/stores/projectStore';
 import { useCitationStore } from '@/stores/citationStore';
+import { useGlyphStore } from '@/stores/glyphStore';
 import TextHighlightViewer from '@/components/TextHighlightViewer.vue';
 import type { DiffEntry, JudgmentType, ReviewFlow, Annotation, CitationType, CitationCredibility } from '@/types';
 import { CITATION_TYPE_META, CREDIBILITY_META } from '@/types';
@@ -57,6 +61,7 @@ const reviewStore = useReviewStore();
 const auditStore = useAuditStore();
 const projectStore = useProjectStore();
 const citationStore = useCitationStore();
+const glyphStore = useGlyphStore();
 const router = useRouter();
 
 onMounted(() => {
@@ -80,7 +85,11 @@ const filter = ref<FilterKey>('all');
 const focusText = ref(true);
 const draftJudgment = ref<JudgmentType>(null);
 const draftNote = ref('');
-const activeTab = ref<'judgment' | 'annotation' | 'review' | 'evidence'>('judgment');
+const activeTab = ref<'judgment' | 'annotation' | 'review' | 'evidence' | 'glyph'>('judgment');
+const glyphSearch = ref('');
+const glyphLinkRelevanceNote = ref('');
+const showGlyphLinkModal = ref(false);
+const linkTargetGlyphId = ref<string | null>(null);
 const newAnnotation = ref('');
 const reviewComment = ref('');
 const showReviewHistory = ref(false);
@@ -424,6 +433,92 @@ function doUnlinkCitation(citationId: string) {
     targetId: diffStore.selectedId,
     description: '解除典籍依据关联',
     details: { citationId },
+  });
+}
+
+const currentGlyphList = computed(() => {
+  if (!diffStore.selectedId) return [];
+  return glyphStore.getGlyphsByDiffEntry(diffStore.selectedId);
+});
+
+const currentGlyphLinks = computed(() => {
+  if (!diffStore.selectedId) return [];
+  return glyphStore.getLinksByDiffEntry(diffStore.selectedId);
+});
+
+const suggestedGlyphs = computed(() => {
+  if (!diffStore.selectedEntry) return [];
+  const chars = new Set<string>();
+  const original = diffStore.selectedEntry.originalText || '';
+  const revised = diffStore.selectedEntry.revisedText || '';
+  for (const ch of original) chars.add(ch);
+  for (const ch of revised) chars.add(ch);
+  
+  const results: Array<{ entry: any; variant?: any }> = [];
+  for (const ch of chars) {
+    const similar = glyphStore.findSimilarVariants(ch);
+    results.push(...similar);
+  }
+  const uniqueIds = new Set<string>();
+  const uniqueResults = results.filter(r => {
+    if (uniqueIds.has(r.entry.id)) return false;
+    uniqueIds.add(r.entry.id);
+    return true;
+  });
+  return uniqueResults;
+});
+
+const availableGlyphsForLink = computed(() => {
+  if (!diffStore.selectedId) return [];
+  const linked = glyphStore.getGlyphsByDiffEntry(diffStore.selectedId);
+  const linkedIds = new Set(linked.map((g) => g.id));
+  return glyphStore.searchGlyphs(glyphSearch.value, {
+    projectId: projectStore.currentProjectId || undefined,
+  }).filter((g) => !linkedIds.has(g.id));
+});
+
+function openGlyphLinkModal(glyphId: string) {
+  linkTargetGlyphId.value = glyphId;
+  glyphLinkRelevanceNote.value = '';
+  showGlyphLinkModal.value = true;
+}
+
+function doLinkGlyph() {
+  if (!diffStore.selectedId || !linkTargetGlyphId.value) return;
+  const link = glyphStore.linkToDiff(
+    linkTargetGlyphId.value,
+    diffStore.selectedId,
+    undefined,
+    glyphLinkRelevanceNote.value || undefined,
+  );
+  if (link) {
+    auditStore.addLog({
+      actionType: 'glyph_link',
+      actor: '本地用户',
+      projectId: projectStore.currentProjectId || undefined,
+      targetId: diffStore.selectedId,
+      description: '关联字形证据到差异条目',
+      details: { glyphId: linkTargetGlyphId.value },
+    });
+    flashToast('已成功关联字形证据');
+  } else {
+    flashToast('该差异条目已关联此字形，无需重复关联');
+  }
+  showGlyphLinkModal.value = false;
+  linkTargetGlyphId.value = null;
+  glyphLinkRelevanceNote.value = '';
+}
+
+function doUnlinkGlyph(glyphId: string) {
+  if (!diffStore.selectedId) return;
+  glyphStore.unlinkFromDiff(glyphId, diffStore.selectedId);
+  auditStore.addLog({
+    actionType: 'glyph_unlink',
+    actor: '本地用户',
+    projectId: projectStore.currentProjectId || undefined,
+    targetId: diffStore.selectedId,
+    description: '解除字形证据关联',
+    details: { glyphId },
   });
 }
 
@@ -782,6 +877,7 @@ const quickCredibilityOptions: { value: CitationCredibility; label: string; desc
                 { key: 'annotation', label: '协作批注', icon: MessageSquare },
                 { key: 'review', label: '复核流转', icon: Clock },
                 { key: 'evidence', label: '典籍依据', icon: BookOpen },
+                { key: 'glyph', label: '字形谱系', icon: Type },
               ]"
               :key="tab.key"
               class="flex items-center gap-2 px-4 py-2 -mb-px border-b-2 font-serif text-sm transition-all"
@@ -805,6 +901,12 @@ const quickCredibilityOptions: { value: CitationCredibility; label: string; desc
                 class="text-xs bg-paper-200 px-1.5 rounded-full"
               >
                 {{ currentEvidenceList.length }}
+              </span>
+              <span
+                v-if="tab.key === 'glyph' && diffStore.selectedEntry"
+                class="text-xs bg-paper-200 px-1.5 rounded-full"
+              >
+                {{ currentGlyphList.length }}
               </span>
             </button>
           </div>
@@ -1285,6 +1387,173 @@ const quickCredibilityOptions: { value: CitationCredibility; label: string; desc
                 </div>
               </div>
             </div>
+
+            <div v-show="activeTab === 'glyph'" class="space-y-4">
+              <div class="flex items-center justify-between">
+                <div class="text-sm font-serif text-ink-soft">
+                  字形证据 · 共 {{ currentGlyphList.length }} 条关联
+                </div>
+                <RouterLink to="/glyphs" class="btn-secondary !py-1 !px-3 text-xs">
+                  <ListTree class="w-3.5 h-3.5" />
+                  打开字形谱系库
+                </RouterLink>
+              </div>
+
+              <div v-if="suggestedGlyphs.length > 0" class="rounded-sm border border-rattan/30 bg-rattan/5 p-3">
+                <div class="text-xs font-serif text-rattan mb-2 flex items-center gap-1.5">
+                  <SparklesIcon class="w-3.5 h-3.5" />
+                  智能提示 · 发现 {{ suggestedGlyphs.length }} 个相关字形
+                </div>
+                <div class="space-y-2 max-h-40 overflow-y-auto">
+                  <div
+                    v-for="sg in suggestedGlyphs"
+                    :key="sg.entry.id"
+                    class="flex items-center gap-2 rounded-sm border border-ink/10 bg-paper-50 p-2 hover:border-rattan/50 transition-all"
+                  >
+                    <div class="w-10 h-10 rounded-sm bg-paper-100 border border-ink/10 flex items-center justify-center font-title text-xl text-ink flex-shrink-0">
+                      {{ sg.entry.headChar }}
+                    </div>
+                    <div class="flex-1 min-w-0">
+                      <div class="font-serif text-sm text-ink font-medium">{{ sg.entry.headChar }}
+                        <span class="text-ink-muted text-xs font-normal">{{ sg.entry.pinyin || '' }}</span>
+                      </div>
+                      <div class="text-[10px] text-ink-muted truncate">
+                        {{ sg.entry.definition || '暂无释义' }} · {{ sg.entry.variants.length }} 个异体
+                      </div>
+                    </div>
+                    <button
+                      class="btn-ghost !p-1.5 hover:!text-vermilion"
+                      @click="openGlyphLinkModal(sg.entry.id)"
+                      title="关联此字形"
+                    >
+                      <Link2 class="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div v-if="currentGlyphList.length > 0" class="space-y-3 max-h-[350px] overflow-y-auto pr-1">
+                <div
+                  v-for="glyph in currentGlyphList"
+                  :key="glyph.id"
+                  class="rounded-sm border border-ink/15 bg-paper-50 p-3"
+                >
+                  <div class="flex items-start justify-between mb-2">
+                    <div class="flex items-center gap-3 flex-1 min-w-0">
+                      <div class="w-12 h-12 rounded-sm bg-paper-100 border border-ink/10 flex items-center justify-center font-title text-2xl text-ink flex-shrink-0">
+                        {{ glyph.headChar }}
+                      </div>
+                      <div class="flex-1 min-w-0">
+                        <div class="font-serif text-base text-ink font-medium">
+                          {{ glyph.headChar }}
+                          <span class="text-ink-muted text-sm font-normal ml-1">{{ glyph.pinyin || '' }}</span>
+                        </div>
+                        <div class="text-xs text-ink-muted mt-0.5">
+                          部首：{{ glyph.radical || '—' }} · 笔画：{{ glyph.strokeCount || '—' }}
+                        </div>
+                      </div>
+                    </div>
+                    <button
+                      class="btn-ghost !p-1 hover:!text-carmine flex-shrink-0"
+                      @click="doUnlinkGlyph(glyph.id)"
+                      title="解除关联"
+                    >
+                      <Unlink class="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+
+                  <div v-if="glyph.definition" class="text-xs font-serif text-ink leading-relaxed pl-15 bg-paper-100/50 rounded-sm p-2 mb-2 ml-15">
+                    {{ glyph.definition }}
+                  </div>
+
+                  <div v-if="glyph.variants.length > 0" class="ml-15">
+                    <div class="text-[10px] text-ink-muted mb-1 font-serif">异体字形（{{ glyph.variants.length }} 个）</div>
+                    <div class="flex flex-wrap gap-1.5">
+                      <div
+                        v-for="v in glyph.variants.slice(0, 6)"
+                        :key="v.id"
+                        class="px-2 py-1 rounded-sm border border-ink/10 bg-paper-100 font-title text-sm"
+                        :title="`${v.dynasty || '不详'} · ${v.sourceTitle || '出处不详'}`"
+                      >
+                        {{ v.variantChar }}
+                      </div>
+                      <div v-if="glyph.variants.length > 6" class="px-2 py-1 text-xs text-ink-muted">
+                        +{{ glyph.variants.length - 6 }}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div v-if="glyph.evolutionChain && glyph.evolutionChain.length > 0" class="ml-15 mt-2">
+                    <div class="text-[10px] text-ink-muted mb-1 font-serif">演化链（{{ glyph.evolutionChain.length }} 个阶段）</div>
+                    <div class="flex items-center gap-1 flex-wrap">
+                      <template v-for="(step, idx) in glyph.evolutionChain.slice(0, 5)" :key="step.id">
+                        <span class="text-xs px-1.5 py-0.5 rounded-sm bg-rattan/10 text-rattan font-serif">
+                          {{ step.dynasty || '—' }}
+                        </span>
+                        <span v-if="idx < glyph.evolutionChain.length - 1 && idx < 4" class="text-ink-pale text-xs">→</span>
+                      </template>
+                    </div>
+                  </div>
+
+                  <div
+                    v-if="currentGlyphLinks.find(l => l.glyphEntryId === glyph.id)?.relevanceNote"
+                    class="mt-2 text-[10px] font-serif text-vermilion pl-15 flex items-start gap-1"
+                  >
+                    <CornerDownRight class="w-3 h-3 mt-0.5 flex-shrink-0" />
+                    <span>关联说明：{{ currentGlyphLinks.find(l => l.glyphEntryId === glyph.id)?.relevanceNote }}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div v-else-if="suggestedGlyphs.length === 0" class="text-center py-6 text-ink-muted font-serif text-sm rounded-sm border border-dashed border-ink/10 bg-paper-50/50">
+                <Type class="w-8 h-8 mx-auto text-ink-pale mb-2" />
+                <div>暂未关联字形证据</div>
+                <div class="text-xs mt-1">从下方搜索字形并关联，或前往字形谱系库录入</div>
+              </div>
+
+              <div class="scroll-divider" />
+
+              <div>
+                <div class="text-sm font-serif text-ink-soft mb-2 flex items-center gap-2">
+                  <Link2 class="w-4 h-4 text-vermilion" />
+                  关联已有字形
+                </div>
+                <div class="relative mb-2">
+                  <Search class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-ink-pale" />
+                  <input
+                    v-model="glyphSearch"
+                    type="text"
+                    placeholder="搜索字头、拼音、释义或异体字……"
+                    class="w-full rounded-md border border-ink/20 bg-paper-50 pl-9 pr-3 py-2 font-serif text-sm focus:border-vermilion focus:outline-none focus:ring-2 focus:ring-vermilion/20"
+                  />
+                </div>
+                <div class="max-h-40 overflow-y-auto space-y-1.5">
+                  <div
+                    v-for="g in availableGlyphsForLink.slice(0, 10)"
+                    :key="g.id"
+                    class="flex items-center gap-2 rounded-sm border border-ink/10 bg-paper-50 p-2 hover:border-vermilion/30 transition-all cursor-pointer"
+                    @click="openGlyphLinkModal(g.id)"
+                  >
+                    <div class="w-8 h-8 rounded-sm bg-paper-100 border border-ink/10 flex items-center justify-center font-title text-base text-ink flex-shrink-0">
+                      {{ g.headChar }}
+                    </div>
+                    <div class="flex-1 min-w-0">
+                      <div class="font-serif text-xs text-ink">{{ g.headChar }}
+                        <span class="text-ink-pale text-[10px]">{{ g.pinyin || '' }}</span>
+                      </div>
+                      <div class="text-[10px] text-ink-muted truncate">{{ g.definition || '暂无释义' }}</div>
+                    </div>
+                    <Link2 class="w-3.5 h-3.5 text-vermilion flex-shrink-0" />
+                  </div>
+                  <div
+                    v-if="availableGlyphsForLink.length === 0"
+                    class="text-center py-3 text-ink-muted font-serif text-xs"
+                  >
+                    {{ glyphSearch ? '没有找到匹配的字形' : '所有字形已关联，或尚未录入字形谱系库' }}
+                  </div>
+                </div>
+              </div>
+            </div>
           </template>
         </div>
       </div>
@@ -1316,6 +1585,40 @@ const quickCredibilityOptions: { value: CitationCredibility; label: string; desc
           <div class="flex justify-end gap-2">
             <button class="btn-secondary" @click="showLinkModal = false">取消</button>
             <button class="btn-primary" @click="doLinkCitation">
+              <Link2 class="w-4 h-4" />
+              确认关联
+            </button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
+    <Teleport to="body">
+      <div
+        v-if="showGlyphLinkModal"
+        class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-ink/40"
+        @click.self="showGlyphLinkModal = false"
+      >
+        <div class="card-scroll w-full max-w-md p-6 animate-fade-in">
+          <div class="flex items-start justify-between mb-4">
+            <h3 class="font-title text-lg text-ink">关联字形证据</h3>
+            <button class="btn-ghost" @click="showGlyphLinkModal = false">
+              <X class="w-4 h-4" />
+            </button>
+          </div>
+          <div class="scroll-divider mb-4" />
+          <div class="mb-4">
+            <label class="block font-serif text-sm text-ink-soft mb-1">相关性说明（可选）</label>
+            <textarea
+              v-model="glyphLinkRelevanceNote"
+              rows="3"
+              placeholder="说明此字形证据与当前差异条目的关联，如：该异体字为此处异文提供了字形演化层面的佐证……"
+              class="text-area-paper text-sm"
+            />
+          </div>
+          <div class="flex justify-end gap-2">
+            <button class="btn-secondary" @click="showGlyphLinkModal = false">取消</button>
+            <button class="btn-primary" @click="doLinkGlyph">
               <Link2 class="w-4 h-4" />
               确认关联
             </button>

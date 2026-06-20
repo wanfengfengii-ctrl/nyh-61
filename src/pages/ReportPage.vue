@@ -30,6 +30,7 @@ import {
   ShieldCheck,
   Link2,
   Image,
+  Type,
 } from 'lucide-vue-next';
 import { RouterLink, useRouter } from 'vue-router';
 import { useDiffStore } from '@/stores/diffStore';
@@ -42,8 +43,9 @@ import { useReviewStore } from '@/stores/reviewStore';
 import { useRuleVersionStore } from '@/stores/ruleVersionStore';
 import { useRuleStore } from '@/stores/ruleStore';
 import { useCitationStore } from '@/stores/citationStore';
+import { useGlyphStore } from '@/stores/glyphStore';
 import type { VerificationReport, ReportTemplate, ReportSection, EvidenceChainItem } from '@/types';
-import { CITATION_TYPE_META, CREDIBILITY_META } from '@/types';
+import { CITATION_TYPE_META, CREDIBILITY_META, GLYPH_VARIANT_TYPE_META, GLYPH_SOURCE_TYPE_META } from '@/types';
 import {
   generateReportJSON,
   generateReportTXT,
@@ -64,6 +66,7 @@ const reviewStore = useReviewStore();
 const ruleVersionStore = useRuleVersionStore();
 const ruleStore = useRuleStore();
 const citationStore = useCitationStore();
+const glyphStore = useGlyphStore();
 const router = useRouter();
 
 const report = ref<VerificationReport | null>(null);
@@ -116,6 +119,9 @@ function buildReport() {
     const summary = citationStore.buildCitationSummary(projectStore.currentProjectId || undefined);
     baseReport.citations = summary.citations;
     baseReport.citationLinks = summary.links;
+    const glyphSummary = glyphStore.buildGlyphSummary(projectStore.currentProjectId || undefined);
+    baseReport.glyphs = glyphSummary.glyphs;
+    baseReport.glyphLinks = glyphSummary.links;
   }
   report.value = baseReport;
 }
@@ -218,6 +224,21 @@ const evidenceChain = computed<EvidenceChainItem[]>(() => {
     });
   }
 
+  if (projectStore.currentProject) {
+    const projectGlyphs = glyphStore.searchGlyphs('', { projectId: projectStore.currentProject.id });
+    projectGlyphs.forEach((g) => {
+      items.push({
+        id: 'glyph_' + g.id,
+        type: 'document',
+        title: `字形谱系：${g.headChar}`,
+        content: `${g.variants.length} 个异体字｜${g.evolutionChain?.length || 0} 阶演化链｜${g.pinyin || '拼音未录'}`,
+        timestamp: g.updatedAt,
+        author: g.createdBy,
+        metadata: { glyph: g },
+      });
+    });
+  }
+
   return items.sort((a, b) => a.timestamp - b.timestamp);
 });
 
@@ -237,6 +258,18 @@ const citationSummary = computed(() => {
 
 function getDiffCitations(diffEntryId: string) {
   return citationStore.getCitationsWithLinksByDiffEntry(diffEntryId);
+}
+
+function getDiffGlyphs(diffEntryId: string) {
+  return glyphStore.getGlyphsByDiffEntry(diffEntryId);
+}
+
+function getDiffGlyphLinks(diffEntryId: string) {
+  return glyphStore.getLinksByDiffEntry(diffEntryId);
+}
+
+function getGlyphLink(diffEntryId: string, glyphId: string) {
+  return glyphStore.getLinksByDiffEntry(diffEntryId).find(l => l.glyphEntryId === glyphId);
 }
 
 function getCredibilityShield(cred: string) {
@@ -924,6 +957,66 @@ const sectionTypeLabels: Record<string, string> = {
                   </div>
                   <div v-if="item.link?.relevanceNote" class="text-[11px] text-vermilion/80 font-serif mt-1.5 italic">
                     ▸ {{ item.link.relevanceNote }}
+                  </div>
+                </div>
+              </div>
+
+              <div v-if="getDiffGlyphs(d.id).length > 0" class="mt-3 space-y-2">
+                <div class="text-xs text-ink-muted flex items-center gap-1 font-bold">
+                  <Type class="w-3 h-3 text-rattan" />
+                  字形证据（{{ getDiffGlyphs(d.id).length }} 条）
+                </div>
+                <div
+                  v-for="glyph in getDiffGlyphs(d.id)"
+                  :key="glyph.id"
+                  class="rounded-sm border border-ink/10 bg-paper-50 px-3 py-2"
+                >
+                  <div class="flex items-start gap-3 mb-2">
+                    <div class="w-10 h-10 rounded-sm bg-paper-100 border border-ink/10 flex items-center justify-center font-title text-xl text-ink flex-shrink-0">
+                      {{ glyph.headChar }}
+                    </div>
+                    <div class="flex-1 min-w-0">
+                      <div class="text-sm font-serif font-medium text-ink">
+                        {{ glyph.headChar }}
+                        <span class="text-ink-muted font-normal text-xs ml-1">{{ glyph.pinyin || '' }}</span>
+                      </div>
+                      <div class="text-[11px] text-ink-muted font-serif">
+                        部首：{{ glyph.radical || '—' }} · 笔画：{{ glyph.strokeCount || '—' }}
+                      </div>
+                    </div>
+                  </div>
+                  <div v-if="glyph.definition" class="text-xs font-serif text-ink-soft leading-relaxed mb-2">
+                    {{ glyph.definition }}
+                  </div>
+                  <div v-if="glyph.variants.length > 0" class="mb-2">
+                    <div class="text-[10px] text-ink-muted mb-1 font-serif">异体字形（{{ glyph.variants.length }} 个）</div>
+                    <div class="flex flex-wrap gap-1.5">
+                      <div
+                        v-for="v in glyph.variants.slice(0, 8)"
+                        :key="v.id"
+                        class="px-1.5 py-0.5 rounded-sm border border-ink/10 bg-paper-100 font-title text-sm"
+                        :title="`${v.dynasty || '不详'} · ${v.sourceTitle || '出处不详'} · ${GLYPH_VARIANT_TYPE_META[v.variantType]?.label || ''}`"
+                      >
+                        {{ v.variantChar }}
+                      </div>
+                      <div v-if="glyph.variants.length > 8" class="px-1.5 py-0.5 text-xs text-ink-muted">
+                        +{{ glyph.variants.length - 8 }}
+                      </div>
+                    </div>
+                  </div>
+                  <div v-if="glyph.evolutionChain && glyph.evolutionChain.length > 0">
+                    <div class="text-[10px] text-ink-muted mb-1 font-serif">演化链</div>
+                    <div class="flex items-center gap-1 flex-wrap">
+                      <template v-for="(step, idx) in glyph.evolutionChain" :key="step.id">
+                        <span class="text-[10px] px-1.5 py-0.5 rounded-sm bg-rattan/10 text-rattan font-serif">
+                          {{ step.dynasty || '—' }}
+                        </span>
+                        <span v-if="idx < glyph.evolutionChain.length - 1" class="text-ink-pale text-xs">→</span>
+                      </template>
+                    </div>
+                  </div>
+                  <div v-if="getGlyphLink(d.id, glyph.id)?.relevanceNote" class="text-[11px] text-vermilion/80 font-serif mt-1.5 italic">
+                    ▸ {{ getGlyphLink(d.id, glyph.id)?.relevanceNote }}
                   </div>
                 </div>
               </div>

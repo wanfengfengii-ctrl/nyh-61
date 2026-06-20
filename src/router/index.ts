@@ -100,6 +100,12 @@ const routes: RouteRecordRaw[] = [
       return true;
     },
   },
+  {
+    path: '/glyphs',
+    name: 'glyphs',
+    component: () => import('@/pages/GlyphGenealogy.vue'),
+    meta: { title: '卷十 · 字形谱系' },
+  },
 ];
 
 const router = createRouter({

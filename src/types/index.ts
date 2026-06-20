@@ -61,6 +61,8 @@ export interface VerificationReport {
   judgments: DiffEntry[];
   citations?: CitationEntry[];
   citationLinks?: CitationDiffLink[];
+  glyphs?: GlyphEntry[];
+  glyphLinks?: GlyphDiffLink[];
 }
 
 export interface Project {

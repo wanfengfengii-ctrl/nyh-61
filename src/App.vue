@@ -18,6 +18,8 @@ import {
   GitBranch,
   Columns,
   FileBarChart,
+  Type,
+  ListTree,
 } from 'lucide-vue-next';
 import { useRuleStore } from '@/stores/ruleStore';
 import { useDiffStore } from '@/stores/diffStore';
@@ -29,6 +31,7 @@ import { useReviewStore } from '@/stores/reviewStore';
 import { useRuleVersionStore } from '@/stores/ruleVersionStore';
 import { useTemplateStore } from '@/stores/templateStore';
 import { useCitationStore } from '@/stores/citationStore';
+import { useGlyphStore } from '@/stores/glyphStore';
 
 const route = useRoute();
 const ruleStore = useRuleStore();
@@ -41,6 +44,7 @@ const reviewStore = useReviewStore();
 const ruleVersionStore = useRuleVersionStore();
 const templateStore = useTemplateStore();
 const citationStore = useCitationStore();
+const glyphStore = useGlyphStore();
 
 const sidebarOpen = ref(false);
 const invalidateToast = ref<{ type: 'rule' | 'text'; message: string } | null>(null);
@@ -59,6 +63,7 @@ const nav = [
   { to: '/versions', name: '版本管理', icon: GitBranch, juan: '卷七' },
   { to: '/collation', name: '版本对读', icon: Columns, juan: '卷八' },
   { to: '/collation-report', name: '校勘报告', icon: FileBarChart, juan: '卷九' },
+  { to: '/glyphs', name: '字形谱系', icon: ListTree, juan: '卷十' },
 ];
 
 function dismissToast() {
@@ -76,6 +81,7 @@ onMounted(() => {
   ruleVersionStore.load();
   templateStore.load();
   citationStore.load();
+  glyphStore.load();
 
   ruleStore.$subscribe(
     () => {
@@ -287,6 +293,10 @@ function selectProject(projectId: string) {
           <span>·</span>
           <span>
             典籍依据：<strong class="text-ink">{{ citationStore.totalCount }}</strong> 条
+          </span>
+          <span>·</span>
+          <span>
+            字形条目：<strong class="text-ink">{{ glyphStore.totalCount }}</strong> 条
           </span>
           <span>·</span>
           <span>
